@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/price1/">
+    <Project Path="PriceUpload1/PriceUpload1.csproj" Id="a21ccceb-c1ef-445f-9409-f47f943a87eb" />
+  </Folder>
+  <Project Path="ADXUpdater/ADXUpdater.csproj" Id="d898bb97-6cbf-4460-96eb-6f72c7d48b77" />
+</Solution>

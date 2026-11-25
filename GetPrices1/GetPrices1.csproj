@@ -1,0 +1,35 @@
+﻿using System;
+using System.IO;
+using System.Net.Http;
+using System.Threading.Tasks;
+
+class Program
+{
+static async Task Main()
+{
+var url = "https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/2025-11-03?adjusted=true&apiKey=***REMOVED***";
+
+using (var client = new HttpClient())
+{
+try
+{
+Console.WriteLine("Downloading stock prices...");
+
+var json = await client.GetStringAsync(url);
+
+var folder = @"C:\Massive";
+Directory.CreateDirectory(folder);
+
+var filePath = Path.Combine(folder, "prices.json");
+File.WriteAllText(filePath, json);
+
+Console.WriteLine($"Saved JSON to: {filePath}");
+}
+catch (Exception ex)
+{
+Console.WriteLine("Error:");
+Console.WriteLine(ex.Message);
+}
+}
+}
+}

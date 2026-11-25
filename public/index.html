@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Prices Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#prices" aria-label="Prices Dashboard">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        Prices Dashboard
+      </a>
+      <span class="connection" id="connection" data-state="offline" role="status">Connecting</span>
+    </div>
+  </header>
+  <main class="shell">
+    <nav class="tabs" aria-label="Dashboard sections">
+      <a href="#prices" id="prices-tab" aria-current="page">Market data</a>
+      <a href="#history" id="history-tab">History</a>
+      <a href="#adx-summary" id="adx-summary-tab">ADX Summary</a>
+      <a href="#papertrade" id="papertrade-tab">Papertrade</a>
+      <a href="#model" id="model-tab">Model</a>
+      <a href="#backtest" id="backtest-tab">Backtester</a>
+      <a href="#logs" id="logs-tab">Logs</a>
+    </nav>
+
+    <section id="prices" aria-labelledby="prices-title">
+      <div class="page-heading">
+        <h1 id="prices-title">Market data</h1>
+        <p>Load daily stock prices from JSON or Massive and sync them to Excel.</p>
+        <p id="price-sync-status" role="status"></p>
+      </div>
+      <div class="layout">
+        <aside class="card import-card">
+          <h2>Import prices</h2>
+          <form id="run-form">
+            <label for="source">Data source</label>
+            <select id="source">
+              <option value="local">Existing JSON by date</option>
+              <option value="pending">All pending JSON files</option>
+              <option value="massive">Download from Massive</option>
+            </select>
+            <p class="field-detail" id="source-detail"></p>
+            <div class="date-fields" id="date-fields">
+              <div>
+                <label for="start-date">Market date</label>
+                <input id="start-date" type="date" required>
+              </div>
+              <div>
+                <label for="end-date">End date <span class="optional">optional</span></label>
+                <input id="end-date" type="date">
+              </div>
+            </div>
+            <label class="check" for="update-workbook">
+              <input type="checkbox" id="update-workbook">
+              <span>Update Excel with latest session</span>
+            </label>
+            <p class="field-detail" id="workbook-detail"></p>
+            <button class="primary" id="run-button" type="submit" disabled>Import prices</button>
+          </form>
+          <div class="run-status" aria-live="polite">
+            <strong id="run-state">Ready</strong>
+            <p id="run-summary">Choose a date and import a session.</p>
+            <p id="cache-summary"></p>
+            <ul id="run-issues" hidden></ul>
+            <details id="run-files" hidden>
+              <summary>JSON files</summary>
+              <ul id="run-file-list"></ul>
+            </details>
+          </div>
+        </aside>
+
+        <section class="card market-card" aria-labelledby="market-title">
+          <div class="card-heading">
+            <div>
+              <h2 id="market-title">Session prices</h2>
+              <p id="market-summary" role="status">No saved sessions</p>
+            </div>
+          </div>
+          <div class="filters">
+            <div>
+              <label for="session-date">Session</label>
+              <select id="session-date" disabled><option value="">No sessions</option></select>
+            </div>
+            <div>
+              <label for="ticker-search">Ticker</label>
+              <input id="ticker-search" type="search" placeholder="Search symbols" autocomplete="off">
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th scope="col">Ticker</th><th scope="col">Open</th><th scope="col">High</th><th scope="col">Low</th>
+                <th scope="col">Close</th><th scope="col">Volume</th><th scope="col">Day direction</th></tr></thead>
+              <tbody id="market-rows"></tbody>
+            </table>
+            <p class="empty" id="market-empty">Import a session to view its prices.</p>
+          </div>
+          <div class="pagination">
+            <span id="market-page" aria-live="polite"></span>
+            <div>
+              <button type="button" id="market-prev" disabled>Previous</button>
+              <button type="button" id="market-next" disabled>Next</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="history" aria-labelledby="history-title" hidden>
+      <div class="page-heading">
+        <h1 id="history-title">Price history</h1>
+        <p id="history-coverage" role="status">Daily prices are stored in local SQLite.</p>
+      </div>
+      <div class="layout">
+        <aside class="card import-card">
+          <h2>Build three years of history</h2>
+          <form id="history-form" class="model-form">
+            <div>
+              <label for="history-source">History source</label>
+              <select id="history-source">
+                <option value="local">Existing JSON files</option>
+                <option value="massive">Existing files and Massive</option>
+              </select>
+              <p class="field-detail" id="history-source-detail"></p>
+            </div>
+            <div>
+              <label for="history-date">Through market date</label>
+              <input id="history-date" type="date" required>
+            </div>
+            <button class="primary" id="history-submit" type="submit" disabled>Build history</button>
+          </form>
+          <div class="run-status" aria-live="polite">
+            <strong id="history-state">Ready</strong>
+            <p id="history-status">Previously saved sessions are reused on each run.</p>
+            <progress id="history-progress" aria-label="Backfill weekdays checked" hidden></progress>
+            <ul id="history-issues" hidden></ul>
+          </div>
+        </aside>
+        <section class="card market-card" aria-labelledby="ticker-history-title">
+          <div class="card-heading">
+            <h2 id="ticker-history-title">Ticker history</h2>
+            <p id="ticker-history-status" role="status">Look up the latest 50 saved trading sessions for a symbol.</p>
+          </div>
+          <form id="ticker-history-form" class="filters history-filters">
+            <div>
+              <label for="history-ticker">Ticker</label>
+              <input id="history-ticker" type="search" placeholder="AAPL" maxlength="64" autocomplete="off" required>
+            </div>
+            <div>
+              <label for="ticker-history-date">Through date <span class="optional">optional</span></label>
+              <input id="ticker-history-date" type="date">
+            </div>
+            <button id="ticker-history-submit" type="submit">Look up</button>
+          </form>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th scope="col">Date</th><th scope="col">Open</th><th scope="col">High</th><th scope="col">Low</th>
+                <th scope="col">Close</th><th scope="col">Volume</th></tr></thead>
+              <tbody id="ticker-history-rows"></tbody>
+            </table>
+            <p class="empty" id="ticker-history-empty">Enter a ticker to view its saved prices.</p>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="adx-summary" aria-labelledby="adx-summary-title" hidden>
+      <div class="page-heading">
+        <h1 id="adx-summary-title">ADX Summary</h1>
+        <p>The workbook’s ADX and 50-day moving-average rules for every ticker in a saved market session.</p>
+      </div>
+      <section class="card" aria-label="ADX market summary">
+        <div class="filters adx-filters">
+          <div><label for="adx-date">Market date</label><select id="adx-date" disabled>
+            <option value="">Loading sessions…</option>
+          </select></div>
+          <div><label for="adx-ticker">Ticker</label><input id="adx-ticker" type="search" placeholder="Type ticker, press Enter" enterkeyhint="search" autocomplete="off"></div>
+          <div><label for="adx-state">ADX state</label><select id="adx-state">
+            <option value="">All states</option>
+            <option>Accelerating</option><option>Improving</option><option>Stable</option>
+            <option>Deteriorating</option><option>Sharp Deterioration</option>
+            <option value="missing">Needs history</option>
+          </select></div>
+          <div><label for="adx-ma">50 MA status</label><select id="adx-ma">
+            <option value="">All positions</option><option>Above</option><option>Below</option>
+            <option>Crossed Above</option><option>Crossed Below</option>
+          </select></div>
+          <button id="adx-refresh" type="button">Refresh</button>
+          <button id="adx-columns-toggle" type="button" aria-expanded="false" aria-controls="adx-table">Show all columns</button>
+          <button id="adx-clear-filters" type="button" disabled>Clear column filters</button>
+        </div>
+        <div class="filters adx-presets">
+          <div><label for="adx-preset">Saved filter presets</label><select id="adx-preset" disabled>
+            <option value="">Loading presets…</option>
+          </select></div>
+          <button id="adx-apply-preset" type="button" disabled>Apply preset</button>
+          <button id="adx-save-preset" type="button">Save preset</button>
+          <button id="adx-run-forward" type="button" disabled>Run 5-day return analysis</button>
+          <p id="adx-preset-status" role="status"></p>
+        </div>
+        <p class="adx-status adx-forward-status" id="adx-papertrade-status" role="status"></p>
+        <p class="adx-status adx-forward-status" id="adx-forward-status" role="status"></p>
+        <section class="adx-forward-results" id="adx-forward-results" aria-labelledby="adx-forward-title" hidden>
+          <h2 id="adx-forward-title">5-day historical returns</h2>
+          <p id="adx-forward-stale" class="warn" hidden>The filtered table changed. Run the analysis again to update these results.</p>
+          <p id="adx-forward-coverage"></p>
+          <dl class="adx-forward-metrics">
+            <div><dt>Average return</dt><dd id="adx-forward-average"></dd></div>
+            <div><dt>Median return</dt><dd id="adx-forward-median"></dd></div>
+            <div><dt>Positive returns</dt><dd id="adx-forward-positive"></dd></div>
+            <div><dt>Matches with returns</dt><dd id="adx-forward-count"></dd></div>
+          </dl>
+          <p id="adx-forward-skipped"></p>
+          <details id="adx-forward-detail">
+            <summary>Recent matches</summary>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>Ticker</th><th>Match date</th><th>Exit date</th><th>Return</th></tr></thead>
+                <tbody id="adx-forward-rows"></tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+        <dialog class="adx-preset-dialog adx-condition-dialog" id="adx-condition-dialog" aria-labelledby="adx-condition-title">
+          <div class="adx-condition-heading">
+            <h2 id="adx-condition-title">5-day returns by condition</h2>
+            <button id="adx-condition-close" type="button" autofocus>Close</button>
+          </div>
+          <p id="adx-condition-status" role="status"></p>
+          <div class="table-scroll" id="adx-condition-table" hidden>
+            <table>
+              <thead><tr><th>Condition</th><th>Avg. 5-day return</th><th>Matches</th></tr></thead>
+              <tbody id="adx-condition-rows"></tbody>
+            </table>
+          </div>
+        </dialog>
+        <dialog class="adx-preset-dialog" id="adx-save-preset-dialog" aria-labelledby="adx-save-preset-title">
+          <h2 id="adx-save-preset-title">Save filter preset</h2>
+          <form id="adx-save-preset-form">
+            <label for="adx-preset-name">Preset name</label>
+            <input id="adx-preset-name" type="text" required autofocus>
+            <p id="adx-preset-error" role="alert"></p>
+            <div class="adx-column-menu-actions">
+              <button id="adx-cancel-preset" type="button">Cancel</button>
+              <button id="adx-confirm-preset" type="submit">Save</button>
+            </div>
+          </form>
+        </dialog>
+        <form class="adx-column-menu" id="adx-column-menu" popover="auto" role="dialog" aria-labelledby="adx-column-menu-title">
+          <h2 id="adx-column-menu-title"></h2>
+          <div id="adx-column-menu-body" class="adx-column-menu-body"></div>
+          <p class="adx-filter-source" id="adx-sp500-source" hidden>S&amp;P 500 membership uses <a href="https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf">IVV</a> and <a href="https://www.ssga.com/us/en/intermediary/etfs/state-street-spdr-sp-500-etf-trust-spy">SPY</a> <span id="adx-sp500-date">holdings.</span></p>
+          <div class="adx-column-menu-actions">
+            <button id="adx-clear-filter" type="button">Clear filter</button>
+            <button id="adx-apply-filter" type="submit">Apply</button>
+          </div>
+        </form>
+        <p class="adx-status" id="adx-status" role="status" aria-live="polite">Loading saved sessions…</p>
+        <p class="adx-zscore-help" id="adx-zscore-help" hidden>
+          <strong>20-day MA Z-score.</strong> For each session, the percentage gap is (close − 20-day average) ÷ 20-day average.
+          The Z-score subtracts the mean of earlier gaps on the same side of the average, then divides by their standard deviation.
+          A negative score below the average or a positive score above it indicates a larger gap than usual.
+        </p>
+        <div class="table-scroll adx-scroll" id="adx-scroll" tabindex="0" aria-label="Scrollable ADX Summary table">
+          <table class="adx-table adx-table-compact" id="adx-table">
+            <thead><tr id="adx-columns"></tr></thead>
+            <tbody id="adx-rows"></tbody>
+          </table>
+          <p class="empty" id="adx-empty">Choose a market session to see its summary.</p>
+        </div>
+        <div class="pagination">
+          <span id="adx-page" aria-live="polite"></span>
+          <div><button type="button" id="adx-previous" disabled>Previous</button>
+            <button type="button" id="adx-next" disabled>Next</button></div>
+        </div>
+        <p class="adx-note">Historical highs and lows use saved history through the selected date. Hover over a Z-score for its 20-day moving-average gap statistics.</p>
+      </section>
+    </section>
+
+    <section id="papertrade" aria-labelledby="papertrade-title" hidden>
+      <div class="page-heading">
+        <h1 id="papertrade-title">Papertrade</h1>
+        <p>Simulated $10 positions enter at the selected market close and exit at the close seven NYSE trading sessions later.</p>
+      </div>
+      <section class="card" aria-label="Paper trades">
+        <div class="card-heading papertrade-heading">
+          <h2>Positions</h2>
+          <button id="papertrade-refresh" type="button">Refresh prices</button>
+        </div>
+        <p class="adx-status adx-forward-status" id="papertrade-status" role="status"></p>
+        <div class="table-scroll" id="papertrade-table" tabindex="0" aria-label="Scrollable paper trades table" hidden>
+          <table class="papertrade-table">
+            <thead><tr>
+              <th scope="col">Ticker</th><th scope="col">Status</th><th scope="col">Entry date</th>
+              <th scope="col">Entry close</th><th scope="col">Invested</th><th scope="col">Shares</th>
+              <th scope="col">Sessions</th><th scope="col">Exit date</th><th scope="col">Price date</th>
+              <th scope="col">Latest or exit close</th><th scope="col">P&amp;L</th><th scope="col">Return</th>
+            </tr></thead>
+            <tbody id="papertrade-rows"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="papertrade-pagination" hidden>
+          <span id="papertrade-page" aria-live="polite"></span>
+          <div><button type="button" id="papertrade-previous">Previous</button>
+            <button type="button" id="papertrade-next">Next</button></div>
+        </div>
+        <p class="empty" id="papertrade-empty">Check Paper trade on an ADX Summary row to start a position.</p>
+      </section>
+    </section>
+
+    <section id="model" aria-labelledby="model-title" hidden>
+      <div class="page-heading">
+        <h1 id="model-title">Trading model</h1>
+        <p>Scan the full market for strategy signals using the JSON history saved locally.</p>
+      </div>
+      <div class="layout">
+        <aside class="card import-card">
+          <h2>Run strategies</h2>
+          <form id="model-form" class="model-form">
+            <div>
+              <label for="model-date">Market date</label>
+              <input id="model-date" type="date" required>
+            </div>
+            <div>
+              <label for="model-baseline">Breakout average</label>
+              <select id="model-baseline"><option value="sma">SMA 20</option><option value="ema">EMA 20</option></select>
+            </div>
+            <div>
+              <label for="model-fast">Crossover fast average</label>
+              <select id="model-fast"><option value="5">EMA 5</option><option value="10">EMA 10</option></select>
+            </div>
+            <div>
+              <label for="model-stop">Breakout initial stop</label>
+              <select id="model-stop"><option value="atr">2 × ATR</option><option value="swing">5-session swing low or high</option></select>
+            </div>
+            <div>
+              <label for="model-trailing">Breakout trailing exit</label>
+              <select id="model-trailing"><option value="ma">20-day average cross</option><option value="atr">2 × ATR trailing stop</option></select>
+            </div>
+            <div>
+              <label for="model-time">Breakout time stop (sessions)</label>
+              <input id="model-time" type="number" min="10" max="15" value="12" required>
+            </div>
+            <button class="primary" id="model-submit" type="submit" disabled>Run model</button>
+          </form>
+          <div class="run-status" aria-live="polite">
+            <strong id="model-state">Ready</strong>
+            <p id="model-status">Strategies using SMA 200 need 200 saved sessions per symbol.</p>
+          </div>
+          <details class="model-method">
+            <summary>Model settings and conventions</summary>
+            <p>Breakouts use both SMA 50 and SMA 200 with RVOL above 1.5 in either direction. The time stop checks closing profit against 2R.</p>
+            <p>Bollinger bands use two population standard deviations. The flat-base scanner compares normalized ATR against the day’s market-wide 20th percentile and compares bandwidth with the previous session.</p>
+            <p>Pullbacks use the 60-session half-life. Signals use the market close, with protective stops checked against the following sessions’ ranges.</p>
+          </details>
+        </aside>
+        <section class="card market-card" aria-labelledby="signals-title">
+          <div class="card-heading">
+            <h2 id="signals-title">Signals</h2>
+            <p id="model-summary" role="status">Run the model to see results.</p>
+          </div>
+          <div class="model-breadth" id="model-breadth" hidden>
+            <h3>Market breadth</h3>
+            <dl id="breadth-metrics" class="metrics"></dl>
+            <p id="breadth-session"></p>
+          </div>
+          <div class="filters">
+            <div>
+              <label for="model-search">Ticker</label>
+              <input id="model-search" type="search" placeholder="Search symbols" autocomplete="off">
+            </div>
+            <div>
+              <label for="model-filter">Signal</label>
+              <select id="model-filter">
+                <option value="">All symbols</option>
+                <option value="entry">New entries</option>
+                <option value="exit">Exits</option>
+                <option value="open">Open model positions</option>
+                <option value="shift">Flat-base regime shifts</option>
+                <option value="insufficient">Missing SMA 200 history</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="model-table">
+              <thead><tr><th scope="col">Ticker</th><th scope="col">Close</th><th scope="col">ADX 14</th>
+                <th scope="col">Breakout</th><th scope="col">Pullback</th><th scope="col">Crossover</th><th scope="col">Flat-base scanner</th></tr></thead>
+              <tbody id="model-rows"></tbody>
+            </table>
+            <p class="empty" id="model-empty">No model results to display.</p>
+          </div>
+          <div class="pagination">
+            <span id="model-page" aria-live="polite"></span>
+            <div>
+              <button type="button" id="model-prev" disabled>Previous</button>
+              <button type="button" id="model-next" disabled>Next</button>
+            </div>
+          </div>
+          <div class="model-detail" id="model-detail" hidden>
+            <div class="detail-heading">
+              <h3 id="model-detail-title" tabindex="-1"></h3>
+              <button type="button" id="close-model-detail">Close details</button>
+            </div>
+            <dl id="model-metrics" class="metrics"></dl>
+            <div class="model-risk">
+              <label for="model-risk">Risk budget per position (USD)</label>
+              <input id="model-risk" type="number" min="0.01" step="0.01" placeholder="Optional">
+            </div>
+            <ul class="position-list" id="model-positions"></ul>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="backtest" aria-labelledby="backtest-title" hidden>
+      <div class="page-heading">
+        <h1 id="backtest-title">Backtester</h1>
+        <p>Test a strategy on saved market prices and compare the results.</p>
+      </div>
+      <div class="layout backtest-layout">
+        <aside class="card import-card">
+          <h2>Configure run</h2>
+          <form id="bt-form" class="model-form">
+            <div>
+              <label for="bt-mode">Universe</label>
+              <select id="bt-mode"><option value="single">Single ticker</option><option value="portfolio">Portfolio</option></select>
+            </div>
+            <label class="check" id="bt-all-field" hidden><input type="checkbox" id="bt-all"> Use every saved ticker</label>
+            <div id="bt-picker">
+              <label for="bt-search">Find ticker</label>
+              <input type="search" id="bt-search" placeholder="Filter saved symbols" autocomplete="off">
+              <label for="bt-ticker">Ticker</label>
+              <div class="bt-picker-row">
+                <select id="bt-ticker" aria-describedby="bt-coverage" disabled>
+                  <option value="">Loading tickers…</option>
+                </select>
+                <button type="button" id="bt-add" hidden>Add</button>
+              </div>
+            </div>
+            <div id="bt-selected" class="bt-selected" aria-label="Selected portfolio tickers" hidden></div>
+            <p id="bt-coverage" class="field-detail" aria-live="polite">Reading SQLite coverage…</p>
+            <div class="bt-date-fields">
+              <div><label for="bt-start">Start date</label><input id="bt-start" type="date" required></div>
+              <div><label for="bt-end">End date</label><input id="bt-end" type="date" required></div>
+            </div>
+            <div>
+              <label for="bt-strategy">Strategy</label>
+              <select id="bt-strategy" required disabled aria-describedby="bt-strategy-status">
+                <option value="">Loading strategies…</option>
+              </select>
+              <p class="field-detail" id="bt-strategy-status" role="status"></p>
+              <button type="button" id="bt-retry" hidden>Retry loading</button>
+            </div>
+            <div id="bt-parameters" class="bt-field-grid"></div>
+            <details class="bt-details">
+              <summary>Capital, costs, and stop loss</summary>
+              <div id="bt-costs" class="bt-field-grid"></div>
+              <p class="field-detail">A stop loss of 0% leaves the stop off.</p>
+            </details>
+            <div class="bt-dividends">
+              <label class="check"><input type="checkbox" id="bt-dividends"> Include cash dividends</label>
+              <p class="field-detail" id="bt-dividend-status"></p>
+              <button type="button" id="bt-sync" hidden>Sync dividends</button>
+            </div>
+            <details class="bt-details">
+              <summary>Run label and notes</summary>
+              <div><label for="bt-label">Label</label><input id="bt-label" type="text" maxlength="80"></div>
+              <div><label for="bt-notes">Notes</label><textarea id="bt-notes" maxlength="1000" rows="3"></textarea></div>
+            </details>
+            <button class="primary" id="bt-submit" type="submit" disabled>Run backtest</button>
+          </form>
+          <div class="run-status" id="bt-status" role="status" aria-live="polite">Loading strategies and coverage…</div>
+        </aside>
+        <section class="card market-card" aria-labelledby="bt-result-title">
+          <div class="card-heading">
+            <h2 id="bt-result-title">Backtest results</h2>
+            <p id="bt-result-summary">Run a strategy or open a saved run.</p>
+          </div>
+          <div id="bt-result" hidden>
+            <dl class="metrics bt-metrics" id="bt-metrics"></dl>
+            <div class="bt-chart-wrap"><canvas id="bt-equity" role="img" aria-label="Strategy equity and buy-and-hold benchmark"></canvas></div>
+            <p class="field-detail bt-chart-status" id="bt-chart-status" hidden></p>
+            <ul id="bt-warnings" class="bt-warnings" hidden></ul>
+            <details class="bt-details bt-result-method">
+              <summary>Execution assumptions</summary>
+              <p>Long-only. Signals at the close fill on the next available open. Slots are sized from prior equity and cash. Stop gaps fill at the open. Open positions are marked at the last saved close.</p>
+              <p>Fees and slippage apply to both sides. Included cash dividends are credited on the ex-date and held as cash until used. Buy-and-hold starts at the first available open without trading costs. Sharpe uses daily returns and a zero risk-free rate.</p>
+            </details>
+            <div class="card-heading"><h3>Closed trades</h3><p id="bt-trade-summary"></p></div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th scope="col">Ticker</th><th scope="col">Entry date</th><th scope="col">Entry fill</th>
+                  <th scope="col">Exit date</th><th scope="col">Exit fill</th><th scope="col">Net P&amp;L</th>
+                  <th scope="col">Return</th><th scope="col">Exit reason</th></tr></thead>
+                <tbody id="bt-trades"></tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <span id="bt-trade-page" aria-live="polite"></span>
+              <div><button type="button" id="bt-trade-prev">Previous</button><button type="button" id="bt-trade-next">Next</button></div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <section class="card bt-history" aria-labelledby="bt-history-title">
+        <div class="card-heading">
+          <h2 id="bt-history-title">Saved backtests</h2>
+          <p>Select runs to compare equity and costs. Runs are stored in this browser.</p>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th scope="col">Compare</th><th scope="col">Run</th><th scope="col">Universe</th>
+              <th scope="col">Trading dates</th><th scope="col">Return</th><th scope="col">Details</th></tr></thead>
+            <tbody id="bt-saved"></tbody>
+          </table>
+          <p class="empty" id="bt-saved-empty">No backtests saved.</p>
+        </div>
+        <div id="bt-comparison" hidden>
+          <div class="card-heading"><h3>Run comparison</h3><p>Equity change from each run's starting capital.</p></div>
+          <div class="bt-chart-wrap"><canvas id="bt-overlay" role="img" aria-label="Equity change for selected backtests"></canvas></div>
+          <div class="table-scroll"><table id="bt-compare-table"></table></div>
+        </div>
+      </section>
+    </section>
+
+    <section id="logs" aria-labelledby="logs-title" hidden>
+      <div class="page-heading">
+        <h1 id="logs-title">Logs</h1>
+        <p id="log-summary">The latest 5,000 dashboard console messages are kept in this browser.</p>
+      </div>
+      <section class="card log-card" aria-label="Saved log entries">
+        <div class="filters log-filters">
+          <div>
+            <label for="log-source">Log source</label>
+            <select id="log-source">
+              <option value="browser">Browser console</option>
+              <option value="server">Node.js and Python</option>
+              <option value="browser-sync">Mirrored browser errors</option>
+            </select>
+          </div>
+          <div id="log-date-field" hidden>
+            <label for="log-date">Log date (UTC)</label>
+            <select id="log-date"><option value="">Latest</option></select>
+          </div>
+          <div>
+            <label for="log-level">Level</label>
+            <select id="log-level">
+              <option value="">All levels</option>
+              <option value="log" id="log-info">Log</option>
+              <option value="warn">Warning</option>
+              <option value="error">Error</option>
+            </select>
+          </div>
+          <div>
+            <label for="log-search">Message</label>
+            <input id="log-search" type="search" placeholder="Search messages" maxlength="200">
+          </div>
+          <button id="refresh-logs" type="button">Refresh</button>
+          <button id="export-logs" type="button" disabled>Export JSON</button>
+        </div>
+        <p class="storage-error" id="storage-error" role="status" hidden></p>
+        <p class="storage-error" id="log-error" role="status" hidden></p>
+        <div class="table-scroll">
+          <table class="log-table">
+            <thead><tr><th scope="col">Time</th><th scope="col">Level</th><th scope="col">Message</th></tr></thead>
+            <tbody id="log-rows"></tbody>
+          </table>
+          <p class="empty" id="log-empty">No saved log entries.</p>
+        </div>
+        <div class="pagination">
+          <span id="log-page" aria-live="polite"></span>
+          <div>
+            <button type="button" id="log-prev" disabled>Previous</button>
+            <button type="button" id="log-next" disabled>Next</button>
+          </div>
+        </div>
+        <div class="log-settings">
+          <label class="check" for="mirror-errors">
+            <input type="checkbox" id="mirror-errors">
+            <span>Mirror new errors to the server log folder</span>
+          </label>
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

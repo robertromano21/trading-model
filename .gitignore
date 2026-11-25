@@ -1,0 +1,22 @@
+.vs/
+bin*
+obj/
+packages/
+
+***bin/
+**/obj*
+
+*.user
+*.suo
+
+# Local dashboard runtimes, dependencies, and logs
+/.runtime/
+/.venv/
+/server/node_modules/
+/logs/
+/.env.local
+/Massive/
+__pycache__/
+prices.sqlite3
+prices.sqlite3-wal
+prices.sqlite3-shm
