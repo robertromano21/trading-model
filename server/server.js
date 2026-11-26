@@ -9,6 +9,22 @@ import express from "express";
 import winston from "winston";
 import DailyRotateFile from "winston-daily-rotate-file";
 import { WebSocket, WebSocketServer } from "ws";
+import { mountAi } from "./ai/routes.js";
+import { createLiveTrading } from "./live-trading.js";
+import { createWorkbench } from "./workbench.js";
+import { createOptions } from "./options.js";
+import { createLogKit } from "./logging.js";
+import { createAutopilot } from "./autopilot.js";
+import { mountAlerts } from "./alerts/index.js";
+import { createVoiceFeed } from "./alerts/voice-feed.js";
+import { createAnalystScoring } from "./analyst-scoring.js";
+import { attachMacroRoutes } from "./macro-routes.js";
+import { createMacroCalendar } from "./macro-calendar.js";
+import { attachBlackSwanRoutes } from "./black-swan-routes.js";
+import { createNowcastRoutes } from "./nowcast-routes.js";
+import { createMassiveKeyRoutes } from "./massive-key-routes.js";
+import { installDashboardLifecycle, CRITICAL_JOB_NAMES } from "./dashboard-lifecycle.js";
+import { createExperiments } from "./experiments.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const localEnv = join(root, ".env.local");
@@ -19,7 +35,7 @@ const logsDir = join(root, "logs");
 const dataDir = resolve(process.env.PRICES_DATA_DIR || join(root, "Massive"));
 const workbook = resolve(process.env.ADX_WORKBOOK_PATH || join(root, "ADX worksheet 2.0.xlsm"));
 const python = process.env.PRICES_PYTHON || (process.platform === "win32" ? "python" : "python3");
-const port = Number(process.env.PRICES_PORT || 3000);
+const port = Number(process.env.PRICES_PORT || 3003); // 3003 by default so it does not collide with other local apps on 3000
 const host = "127.0.0.1";
 const url = `http://localhost:${port}`;
 const allowedHosts = new Set([`localhost:${port}`, `${host}:${port}`]);
@@ -27,7 +43,7 @@ if (port === 80) {
   allowedHosts.add("localhost");
   allowedHosts.add(host);
 }
-const hasApiKey = Boolean(process.env.MASSIVE_API_KEY?.trim());
+let hasApiKey = Boolean(process.env.MASSIVE_API_KEY?.trim()); // updated when the key is saved in Data keys
 const marketClock = new Intl.DateTimeFormat("en-CA", {
   timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
 });
@@ -41,7 +57,9 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 
 mkdirSync(logsDir, { recursive: true });
-const format = winston.format.combine(winston.format.timestamp(), winston.format.json());
+// Request ids, redaction and compaction for every log line (server/logging.js).
+const logKit = createLogKit({ logsDir });
+const format = winston.format.combine(logKit.format(winston), winston.format.timestamp(), winston.format.json());
 
 function rotatingLog(name) {
   const file = new DailyRotateFile({
@@ -57,11 +75,18 @@ function rotatingLog(name) {
   return file;
 }
 
+const serverFile = rotatingLog("server");
 const serverLog = winston.createLogger({
   format,
-  transports: [new winston.transports.Console(), rotatingLog("server")],
+  transports: [new winston.transports.Console(), serverFile],
 });
 const browserLog = winston.createLogger({ format, transports: [rotatingLog("browser-sync")] });
+// Browser console errors, unhandled rejections, fetch failures and UI actions (public/client-log.js).
+const clientLog = winston.createLogger({ format, transports: [rotatingLog("browser")] });
+// Console capture and process error capture into the rotating server log.
+logKit.captureConsole(winston.createLogger({ format, transports: [serverFile] }));
+logKit.captureProcessErrors(serverLog);
+serverLog.info("Session started", { source: "server", pid: process.pid, node: process.version, logsDir });
 const app = express();
 const server = createServer(app);
 const sockets = new WebSocketServer({ noServer: true, maxPayload: 1024 });
@@ -266,6 +291,7 @@ function syncPricesOnLaunch(response) {
 }
 
 app.disable("x-powered-by");
+app.use(logKit.requestIds);
 app.use((request, response, next) => {
   if (!localHost(request)) {
     response.status(403).json({ error: "Use the local dashboard address." });
@@ -281,7 +307,7 @@ app.use((request, response, next) => {
     const started = Date.now();
     const path = request.path;
     response.on("finish", () => serverLog.info("HTTP request", {
-      method: request.method, path, statusCode: response.statusCode, durationMs: Date.now() - started,
+      method: request.method, path, statusCode: response.statusCode, durationMs: Date.now() - started, requestId: request.id,
     }));
   }
   next();
@@ -297,6 +323,55 @@ app.get("/api/status", (_request, response) => response.json({
   latestLocalDate: latestLocalDate(),
   latestHistoryDownload: yesterdayEastern(),
 }));
+
+// Read-only results from the research runner and the Python paper trader (engine/research.py, engine/paper_trader.py).
+function sendResearchFile(response, name, missing) {
+  const path = join(dataDir, "Research", name);
+  if (!existsSync(path)) {
+    response.status(404).json({ error: missing });
+    return;
+  }
+  try {
+    response.json(JSON.parse(readFileSync(path, "utf8")));
+  } catch (error) {
+    serverLog.error("Research file unreadable", { name, error: error.message });
+    response.status(500).json({ error: `${name} could not be read.` });
+  }
+}
+app.get("/api/paper2/status", (request, response) => sendResearchFile(
+  response, request.query.dry === "1" ? "paper_status_dryrun.json" : "paper_status.json",
+  "No paper-trading status yet. Run engine/paper_trader.py run (or run-paper-daily.ps1)."));
+app.get("/api/research/summary", (_request, response) => sendResearchFile(
+  response, "research_summary.json", "No research results yet. Run engine/research.py all."));
+app.get("/api/research/attribution", (_request, response) => sendResearchFile(
+  response, "attribution.json", "No return attribution yet. Run engine/research.py attribution (or the Research: return attribution job)."));
+app.get("/api/research/probabilities", (_request, response) => sendResearchFile(
+  response, "prob_latest.json", "No probability study yet. Run engine/research.py prob (or the Research: probability walk-forward job)."));
+app.get("/api/research/prob-walkforward", (_request, response) => sendResearchFile(
+  response, "prob_walkforward.json", "No probability walk-forward yet. Run engine/research.py prob."));
+app.get("/api/daytrade/status", (request, response) => sendResearchFile(
+  response, request.query.dry === "1" ? "daytrade_status_dryrun.json" : "daytrade_status.json",
+  "No day-trading status yet. Run engine/daytrader.py run."));
+app.get("/api/daytrade/research", (_request, response) => sendResearchFile(
+  response, "daytrade_summary.json", "No day-trading research yet. Run engine/daytrader.py research."));
+app.get("/api/paper2/drift", (_request, response) => sendResearchFile(
+  response, "drift_status.json", "No drift report yet. It is written after the daily paper run."));
+attachMacroRoutes(app, { dataDir });
+attachBlackSwanRoutes(app, { dataDir });
+const macroCalendar = createMacroCalendar({
+  root, dataDir, python,
+  log: (level, message, meta) => serverLog.log(level, message, { source: "macro-calendar", ...meta }),
+});
+macroCalendar.mount(app);
+app.get("/api/swarm/status", (_request, response) => sendResearchFile(
+  response, join("swarm", "swarm_status.json"), "No swarm results yet. Run engine/swarm.py run."));
+app.get("/api/crypto/status", (_request, response) => sendResearchFile(
+  response, join("crypto", "paper", "crypto_paper_status.json"),
+  "No crypto paper accounts yet. Run engine/crypto_paper.py run --fetch."));
+app.get("/api/regime-allocation", (_request, response) => sendResearchFile(
+  response, join("regime_allocation", "summary.json"),
+  "No regime-allocation study yet. Run engine/research.py regime-allocation (or python regime_allocation.py research)."));
+
 
 app.get("/api/logs", async (request, response) => {
   const { stream, date, level = "", q = "" } = request.query;
@@ -459,6 +534,27 @@ app.use("/api", (request, response, next) => {
   parseJson(request, response, next);
 });
 
+// Manual, user-confirmed Schwab orders only (ticket -> preview -> Confirm); OFF by default. See server/live-trading.js.
+createLiveTrading({ root, dataDir, log: serverLog }).mount(app);
+// Ticker charts, real-time Schwab quotes (market data only), data health and allow-listed research jobs. See server/workbench.js.
+const workbench = createWorkbench({ root, dataDir, python, requestId: logKit.currentRequestId,
+  log: (level, message, meta) => serverLog.log(level, message, { source: "workbench", ...meta }) });
+workbench.mount(app);
+// Our macro nowcasts (raw data only) + FRED key status/save/test. Refresh is spawned detached.
+createNowcastRoutes({ root, dataDir, python, log: (level, message, meta) => serverLog.log(level, message, { source: "nowcast", ...meta }) }).mount(app);
+// Massive API key status/save/test (Data keys card). Saved to .env.local; never sent back to the browser.
+createMassiveKeyRoutes({ root, log: (level, message, meta) => serverLog.log(level, message, { source: "keys", ...meta }),
+  onChange: () => { hasApiKey = Boolean(process.env.MASSIVE_API_KEY?.trim()); } }).mount(app);
+// Options chains / payoff analytics and the options PAPER book (market data + local files only). See server/options.js.
+createOptions({ root, dataDir, python, log: (level, message, meta) => serverLog.log(level, message, { source: "options", ...meta }) }).mount(app);
+// Autonomous PAPER trading (never real orders): scheduled swing + day-trader runs and the decision chat log.
+const autopilot = createAutopilot({ root, dataDir, python, port, syncPrices: () => syncPricesOnLaunch(),
+  log: (level, message, meta) => serverLog.log(level, message, { source: "autopilot", ...meta }) });
+autopilot.mount(app);
+// Structured browser log intake and the log viewer (all streams, filters).
+app.post("/api/client-logs", logKit.clientLogsHandler(clientLog));
+app.get("/api/log-viewer", logKit.viewerHandler());
+
 app.post("/api/papertrade/marks", async (request, response) => {
   const result = await runEngine({ script: "papertrade.py", options: request.body });
   if (result?.status !== "complete") {
@@ -544,7 +640,7 @@ app.post("/api/backtest", async (request, response) => {
 app.post("/api/backtest/dividends", async (_request, response) => {
   if (!hasApiKey || syncingDividends) {
     response.status(hasApiKey ? 409 : 400).json({ error: hasApiKey ? "Dividend history is already syncing." :
-      "Set MASSIVE_API_KEY in PowerShell and restart the server to sync dividends." });
+      "Add your Massive API key under Research & data > Data keys to sync dividends." });
     return;
   }
   syncingDividends = true;
@@ -576,7 +672,7 @@ app.post("/api/run-model", (request, response) => {
     return;
   }
   if (source === "massive" && !hasApiKey) {
-    response.status(400).json({ error: "Set MASSIVE_API_KEY in PowerShell before starting the server." });
+    response.status(400).json({ error: "Add your Massive API key under Research & data > Data keys." });
     return;
   }
   const options = pending ? { source, updateWorkbook } : { startDate, endDate, source, updateWorkbook };
@@ -601,7 +697,7 @@ app.post("/api/backfill-history", (request, response) => {
     return;
   }
   if (mode === "massive" && (!hasApiKey || date > yesterdayEastern())) {
-    response.status(400).json({ error: !hasApiKey ? "Set MASSIVE_API_KEY in PowerShell and restart the server." :
+    response.status(400).json({ error: !hasApiKey ? "Add your Massive API key under Research & data > Data keys." :
       "Choose a history end date before today in New York." });
     return;
   }
@@ -619,6 +715,88 @@ app.post("/api/browser-logs", (request, response) => {
   }
   browserLog.error(message, { browserTimestamp: timestamp });
   response.sendStatus(204);
+});
+
+// AI analyst (server/ai): Q&A, command prompt, red/green flags and the paper-trader advisory file. Advisory only.
+const aiKit = mountAi(app, { root, dataDir, python, log: (level, message, meta) => serverLog.log(level, message, meta) });
+const alertsKit = mountAlerts(app, { root, log: serverLog });
+// Decision voice feed: new paper/swarm/crypto/options decisions, nowcast moves and regime changes -> /api/alerts stream (read-only; TM_VOICE_FEED=off disables).
+const voiceFeed = createVoiceFeed({ emit: alertsKit.emitAlert, listChat: (query) => autopilot.listChat(query), getRegime: () => aiKit?.advisor?.regime?.(), dataDir,
+  log: (level, message, meta) => serverLog.log(level, message, { source: "voice-feed", ...meta }) }).start();
+// Analyst scorecard (engine/analyst_scoring.py): flag/stop outcomes at 5/20/60 days and the fail-closed risk gate.
+createAnalystScoring({ root, dataDir, python, log: (level, message, meta) => serverLog.log(level, message, { source: "analyst-scoring", ...meta }) }).mount(app);
+// Experiment PAPER accounts (ids 1000-9999; never the live paper config) and the analyst's adjudicated actions,
+// which call these same routes over loopback after an explicit Allow in the command console. See server/experiments.js.
+const experiments = createExperiments({ dataDir, quant: aiKit.quant, memory: aiKit.memory,
+  priceOf: async (ticker) => {
+    try { const q = (await workbench.quotes([ticker])).quotes?.[ticker]; if (q?.last > 0) return { price: q.last, source: "schwab" }; } catch { /* fall back to local history */ }
+    const bar = aiKit.prices?.bars(ticker, 1)?.[0];
+    return bar?.close > 0 ? { price: bar.close, source: `local close ${bar.date}` } : null;
+  },
+  log: (level, message, meta) => serverLog.log(level, message, { source: "experiments", ...meta }) }).mount(app);
+aiKit.actions?.attach({ emit: alertsKit.emitAlert, experiments });
+
+function shutdownBusy() {
+  if (job?.status === "running") {
+    return { reason: `${jobLabels[job.kind] || job.kind} is running`, critical: CRITICAL_JOB_NAMES.has(job.kind) };
+  }
+  const running = [...workbench.jobs.values()].filter((item) => item.status === "running");
+  // Detached jobs (the Schwab daily backfill) keep running after the dashboard exits.
+  const blocking = running.filter((item) => !item.detached);
+  const criticalJob = blocking.find((item) => CRITICAL_JOB_NAMES.has(item.name));
+  const hit = criticalJob || blocking[0];
+  if (hit) return { reason: `${hit.label || hit.name} is running`, critical: CRITICAL_JOB_NAMES.has(hit.name) };
+  const reauth = workbench.reauthView?.()?.job;
+  if (reauth?.status === "running") return { reason: "Schwab reauthorization is running", critical: true };
+  const runningAutopilot = autopilot.status()?.running;
+  if (runningAutopilot) {
+    return { reason: `Autopilot ${runningAutopilot.name || "task"} is running`, critical: true };
+  }
+  if (activeBacktest) return { reason: "A backtest is running", critical: false };
+  if (activeAdxReplay) return { reason: "ADX replay is running", critical: false };
+  if (syncingDividends) return { reason: "Dividend sync is running", critical: false };
+  return null;
+}
+
+function endLogger(logger) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, 2000);
+    try {
+      logger.end(() => { clearTimeout(timer); resolve(); });
+    } catch {
+      clearTimeout(timer);
+      resolve();
+    }
+  });
+}
+
+installDashboardLifecycle(app, {
+  server,
+  env: process.env,
+  isLocal: localHost,
+  sameOrigin,
+  isBusy: shutdownBusy,
+  log: {
+    info: (message, meta) => serverLog.info(message, meta),
+    warn: (message, meta) => serverLog.warn(message, meta),
+    error: (message, meta) => serverLog.error(message, meta),
+  },
+  beforeClose: async () => {
+    try { autopilot.stop(); } catch (error) { serverLog.warn("Autopilot did not stop cleanly", { error: error.message }); }
+    try { macroCalendar.stopWatcher(); } catch (error) { serverLog.warn("Macro watcher did not stop cleanly", { error: error.message }); }
+    try { voiceFeed.stop(); } catch { /* already stopped */ }
+    try {
+      for (const socket of sockets.clients) {
+        try { socket.close(); } catch { /* already closed */ }
+      }
+      sockets.close();
+    } catch (error) {
+      serverLog.warn("WebSocket server did not close cleanly", { error: error.message });
+    }
+  },
+  flush: async () => {
+    await Promise.all([endLogger(serverLog), endLogger(browserLog), endLogger(clientLog)]);
+  },
 });
 
 app.use("/api", (_request, response) => response.status(404).json({ error: "Unknown API endpoint." }));
@@ -650,7 +828,13 @@ server.on("error", (error) => {
 });
 server.listen(port, host, () => {
   serverLog.info("Prices dashboard listening", { url, dataDir, workbook: basename(workbook) });
-  syncPricesOnLaunch();
+  aiKit.actions?.attach({ baseUrl: `http://${host}:${port}` });
+  // PRICES_SKIP_LAUNCH_SYNC=1 starts without the launch price sync (used for a side-by-side test server).
+  if (process.env.PRICES_SKIP_LAUNCH_SYNC !== "1") syncPricesOnLaunch();
+  autopilot.start();
+  try { macroCalendar.startWatcher(); } catch (error) {
+    serverLog.warn("Macro release watcher did not start", { error: error.message });
+  }
   if (process.platform === "win32" && process.env.PRICES_OPEN_BROWSER === "1") {
     const browser = spawn("rundll32.exe", ["url.dll,FileProtocolHandler", url], {
       detached: true, stdio: "ignore", windowsHide: true,

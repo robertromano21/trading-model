@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Analyst · Trading Model</title>
+  <link rel="stylesheet" href="ai.css">
+  <script src="/nav.js"></script>
+  <script src="/decision-chat.js" defer></script>
+  <script src="/analyst-scorecard.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>AI Analyst</h1>
+    <nav><a href="/">Dashboard</a> · <a href="/paper2.html">Paper trader</a></nav>
+    <div id="model-bar">
+      <label>Model <select id="model-select"></select></label>
+      <button id="key-button" type="button">API keys…</button>
+      <span id="model-status" role="status"></span>
+    </div>
+  </header>
+  <main>
+    <section id="console" aria-live="polite"></section>
+    <form id="prompt-form" autocomplete="off">
+      <span class="caret">&gt;</span>
+      <input id="prompt" type="text" placeholder='Ask anything, e.g. "What do you think of Nvidia today?" — /help for commands'>
+      <button type="submit">Send</button>
+    </form>
+    <section id="verdicts-panel">
+      <h2>Verdicts <button id="flag-button" type="button">Flag targets</button> <span id="flag-status" role="status"></span></h2>
+      <table id="verdicts"><thead><tr><th>Ticker</th><th>Flag</th><th>Action</th><th>Conviction</th><th>Stretch</th><th>Entry band</th><th>Stop</th><th>Diversification</th><th>Source</th><th>When</th></tr></thead><tbody></tbody></table>
+      <p class="hint">Verdicts are advisory. The paper trader reads <code>Massive/Research/advisory_verdicts.json</code> and can only reduce or defer risk; its risk engine stays final.</p>
+    </section>
+  </main>
+  <dialog id="key-dialog">
+    <form method="dialog" id="key-form">
+      <p>Keys are saved on this PC in <code>keys/&lt;provider&gt;.key</code> (gitignored), load automatically next start, and are never sent back to the browser. An environment key (OPENAI_API_KEY / XAI_API_KEY / GROQ_API_KEY) keeps priority.</p>
+      <label>Provider <select id="key-provider"><option value="openai">OpenAI</option><option value="xai">xAI (Grok)</option><option value="groq">Groq</option></select></label>
+      <input id="key-input" type="password" autocomplete="off" placeholder="API key">
+      <div class="row"><button id="key-save" type="button">Save key</button><button value="cancel">Close</button><span id="key-msg" role="status"></span></div>
+      <ul id="key-state"></ul>
+    </form>
+  </dialog>
+  <script src="ai.js"></script>
+</body>
+</html>

@@ -379,13 +379,13 @@ function refreshControls() {
   historyButton.disabled = !serverConfig || running || missingHistoryKey;
   historyButton.textContent = running && job?.kind === "history" ? "Building history…" : "Build history";
   byId("history-source-detail").textContent = missingHistoryKey
-    ? "Set MASSIVE_API_KEY in PowerShell to download missing dates."
+    ? "Add a Massive API key (Research & data > Data keys) to download missing dates."
     : downloadsHistory ? "Downloads only dates missing from local storage. Requires three years of plan access." : "";
   byId("date-fields").hidden = !usesDates;
   startDate.disabled = !usesDates;
   endDate.disabled = !usesDates;
   byId("source-detail").textContent = source.value !== "massive" ? serverConfig?.dataDir ?? "" :
-    needsKey ? "Set MASSIVE_API_KEY in PowerShell to enable downloads." : "Download adjusted daily bars.";
+    needsKey ? "Add a Massive API key (Research & data > Data keys) to enable downloads." : "Download adjusted daily bars.";
   updateWorkbook.disabled = !serverConfig?.workbookExists;
   byId("workbook-detail").textContent = serverConfig?.workbookExists ? serverConfig.workbook :
     serverConfig ? "Excel workbook unavailable." : "";

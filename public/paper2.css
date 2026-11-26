@@ -1,0 +1,49 @@
+body { font-family: system-ui, sans-serif; margin: 0; background: #0f1419; color: #e6e6e6; }
+header, main { padding: 12px 24px; }
+h1 { margin: 0 0 4px; font-size: 22px; }
+h2 { font-size: 16px; margin: 20px 0 8px; }
+a { color: #6cb6ff; }
+.sub, .muted { color: #9aa4ad; font-size: 13px; }
+.error { color: #ff7b72; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.card { background: #1b222a; border-radius: 8px; padding: 10px 12px; }
+.card .label { color: #9aa4ad; font-size: 12px; }
+.card .value { font-size: 18px; margin-top: 4px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid #2a323c; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { color: #9aa4ad; font-weight: 500; }
+canvas { width: 100%; max-width: 900px; background: #1b222a; border-radius: 8px; }
+.pos { color: #56d364; } .neg { color: #ff7b72; }
+button { background: #2a323c; color: #e6e6e6; border: 1px solid #3a444f; border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.trade { padding: 2px 8px; margin-left: 4px; font-size: 12px; }
+button.buy { border-color: #2f8f46; } button.sell { border-color: #a8433d; }
+button.danger { background: #8b2c27; border-color: #c2453d; }
+dialog { background: #1b222a; color: #e6e6e6; border: 1px solid #3a444f; border-radius: 10px; min-width: 380px; }
+.ticket label { display: block; margin: 8px 0; font-size: 13px; }
+.ticket input, .ticket select { background: #0f1419; color: #e6e6e6; border: 1px solid #3a444f; border-radius: 4px; padding: 4px; }
+.ticket .buttons { display: flex; gap: 8px; margin-top: 12px; }
+pre { white-space: pre-wrap; font-size: 12px; background: #0f1419; padding: 8px; border-radius: 6px; }
+.live { border: 1px solid #5a3a3a; border-radius: 8px; padding: 4px 14px 12px; }
+.card .small, .small { font-size: 12px; }
+.card .value.small { font-size: 14px; }
+.pos { color: #6fd08c; } .neg { color: #ff8a80; }
+a { color: #9cc9ff; }
+
+.warn { color: #f2c14e; }
+#drift { scroll-margin-top: 72px; }
+.drift-table { margin-top: 10px; }
+.drift-table td, .drift-table th { white-space: normal; }
+.drift-notes { margin: 8px 0 0; padding-left: 18px; }
+
+#tax-panel h3 { font-size: 14px; margin: 14px 0 6px; }
+#tax-panel code { font-size: 12px; }
+
+#regime-allocation { scroll-margin-top: 72px; }
+#regime-allocation h3 { font-size: 14px; margin: 14px 0 6px; }
+#regime-allocation code { font-size: 12px; }
+.alloc-table tr.alloc-current td { background: #243044; }
+
+/* paper2-macro.js dollar-outlook alert line */
+.p2m-alert { color: #b45309; }

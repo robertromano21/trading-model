@@ -1,0 +1,86 @@
+{
+  "symbol": "SPY",
+  "empty": false,
+  "candles": [
+    {
+      "open": 103,
+      "high": 105,
+      "low": 102,
+      "close": 104,
+      "volume": 1000003,
+      "datetime": 1136264400000
+    },
+    {
+      "open": 104,
+      "high": 106,
+      "low": 103,
+      "close": 105,
+      "volume": 1000004,
+      "datetime": 1136350800000
+    },
+    {
+      "open": 105,
+      "high": 107,
+      "low": 104,
+      "close": 106,
+      "volume": 1000005,
+      "datetime": 1136437200000
+    },
+    {
+      "open": 106,
+      "high": 108,
+      "low": 105,
+      "close": 107,
+      "volume": 1000006,
+      "datetime": 1136523600000
+    },
+    {
+      "open": 109,
+      "high": 111,
+      "low": 108,
+      "close": 110,
+      "volume": 1000009,
+      "datetime": 1136782800000
+    },
+    {
+      "open": 518,
+      "high": 520,
+      "low": 517,
+      "close": 519,
+      "volume": 2000018,
+      "datetime": 1795035600000
+    },
+    {
+      "open": 519,
+      "high": 521,
+      "low": 518,
+      "close": 520,
+      "volume": 2000019,
+      "datetime": 1795122000000
+    },
+    {
+      "open": 520,
+      "high": 522,
+      "low": 519,
+      "close": 521,
+      "volume": 2000020,
+      "datetime": 1795208400000
+    },
+    {
+      "open": 521,
+      "high": 523,
+      "low": 520,
+      "close": 522,
+      "volume": 2000021,
+      "datetime": 1795294800000
+    },
+    {
+      "open": 524,
+      "high": 526,
+      "low": 523,
+      "close": 525,
+      "volume": 2000024,
+      "datetime": 1795554000000
+    }
+  ]
+}

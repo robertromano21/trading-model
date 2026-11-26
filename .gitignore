@@ -20,3 +20,47 @@ __pycache__/
 prices.sqlite3
 prices.sqlite3-wal
 prices.sqlite3-shm
+
+# Local backups, research output and paper-trading state (never commit)
+*.bak-*
+*.misdated-*
+/Massive/
+/Research/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Schwab OAuth tokens and intraday cache (secrets / market data; never commit)
+schwab_token*.json
+*.token.json
+
+
+# AI analyst provider keys (entered in ai.html; never commit)
+/keys/
+*.key
+
+/models/
+
+# Backup copies of any kind (edits are backed up as <file>.bak-YYYYMMDD-HHMM)
+*.bak
+*.bak-*
+*.bak.*
+*.orig
+
+# Local environment and secrets (keep .env.example tracked)
+.env
+.env.local*
+.env.*.local
+!.env.example
+.python_history
+node_modules/
+*.pyc
+*.tmp
+# Experiment accounts and the trial registry are local user data (any data dir)
+**/Research/experiments/
+trial_registry.jsonl
+# Token files and local model weights anywhere
+*tokens*.json
+*token.json
+**/models/
+*.onnx

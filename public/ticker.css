@@ -1,0 +1,46 @@
+body { margin: 0; }
+.ticker-page { max-width: 1500px; margin: 0 auto; padding: 10px 16px 40px; }
+.quote-head { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; }
+.quote-head h1 { margin: 0; font-size: 28px; }
+.price-block .last { font-size: 26px; font-weight: 700; margin-right: 8px; }
+.actions { margin-left: auto; display: flex; gap: 8px; }
+.actions button { padding: 6px 14px; }
+.banner { background: #3a2a12; color: #ffd8a0; border: 1px solid #6b4b1c; padding: 6px 10px; border-radius: 6px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 10px 0; font-size: 13px; }
+.toolbar .group button { border-radius: 0; margin: 0; }
+.toolbar .group button.on { background: #2f5d4f; border-color: #4f9c83; }
+.toolbar select { background: #121b23; color: #e6e6e6; border: 1px solid #2e3b47; border-radius: 4px; padding: 3px; }
+.menu { position: relative; }
+.menu summary { cursor: pointer; padding: 4px 10px; border: 1px solid #3a444f; border-radius: 6px; list-style: none; }
+.menu > div { position: absolute; z-index: 20; background: #141c23; border: 1px solid #3a444f; border-radius: 8px; padding: 8px 12px;
+  display: grid; grid-template-columns: repeat(2, max-content); gap: 4px 16px; margin-top: 4px; }
+.menu label { white-space: nowrap; }
+.menu .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; }
+@media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+#chart { height: 720px; border: 1px solid #26323d; border-radius: 8px; overflow: hidden; }
+.side .box, .box { background: #121a21; border: 1px solid #26323d; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+.box h2 { font-size: 14px; margin: 4px 0 8px; color: #9fb0bc; }
+#ind td { padding: 2px 6px; font-size: 12px; } #ind td:last-child { text-align: right; }
+.flag { display: inline-block; padding: 2px 10px; border-radius: 10px; font-weight: 700; }
+.flag.GREEN { background: #1f5131; color: #9ff0b5; } .flag.YELLOW { background: #574a12; color: #ffe27a; } .flag.RED { background: #5a1d1d; color: #ff9c9c; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 10px; font-size: 12px; }
+.kv dt { color: #8a9aa6; } .kv dd { margin: 0; }
+.ask { display: flex; gap: 6px; margin-top: 8px; } .ask input { flex: 1; background: #0d1419; color: #e6e6e6; border: 1px solid #2e3b47; border-radius: 4px; padding: 4px; }
+.answer { white-space: pre-wrap; font-size: 12px; margin-top: 6px; max-height: 320px; overflow: auto; }
+.news { list-style: none; padding: 0; margin: 0; font-size: 13px; } .news li { padding: 5px 0; border-bottom: 1px solid #1e2830; }
+.news a { color: #9cc9ff; } .news .meta { color: #8a9aa6; font-size: 11px; }
+.small { font-size: 12px; } .pos { color: #6fd08c; } .neg { color: #ff8a80; }
+a.trade.chart { color: #9cc9ff; margin-left: 4px; font-size: 12px; }
+/* Lightweight Charts lays its panes out in a <table>; undo the page-wide table/cell styles inside the chart */
+#chart table { width: auto; border-collapse: separate; font-size: inherit; }
+#chart td, #chart th { padding: 0; border: 0; text-align: initial; white-space: normal; }
+/* paper2.css styles every <canvas> (width 100%, max-width 900px, background); the chart's canvases must keep their own sizes */
+#chart canvas { width: auto; max-width: none; background: transparent; border-radius: 0; }
+
+.title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.exh-badge { display: none; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; letter-spacing: 0.01em; }
+.exh-badge:not([hidden]) { display: inline-block; }
+.exh-badge.up { background: #5a1d1d; color: #ffb4b4; }
+.exh-badge.down { background: #1d3a2a; color: #9be7c4; }
+.exh-badge.watch { background: #3a3420; color: #ffd166; }

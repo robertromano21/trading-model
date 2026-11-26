@@ -1,0 +1,11 @@
+/* Analyst scorecard panel (AI page + ticker page) */
+#scorecard-panel, .scorecard { margin: 18px 0; }
+#scorecard-panel h2, .scorecard h3, .scorecard h4 { margin: 12px 0 6px; }
+.score-table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 6px 0 12px; }
+.score-table th, .score-table td { border-bottom: 1px solid #2a2f3a; padding: 4px 6px; text-align: left; }
+.gate { border-radius: 6px; padding: 8px 12px; margin: 8px 0 12px; border: 1px solid #39404f; }
+.gate.open { background: #16321d; border-color: #1f5f2e; }
+.gate.closed { background: #2a1c1c; border-color: #7a1f1f; }
+.gate p { margin: 4px 0 0; }
+.scorecard .neg { color: #f0a0a0; }
+.scorecard details { margin: 8px 0; }

@@ -1,0 +1,7 @@
+/* Return-attribution panel (ops + paper pages). */
+#attribution .attr-series { margin: 1.1rem 0 1.4rem; }
+#attribution .attr-series h3 { margin-bottom: 0.35rem; }
+#attr-verdict { margin: 0.4rem 0 0.8rem; }
+#attr-summary { overflow-x: auto; }
+#attr-caveats { margin-top: 0.6rem; }
+#attribution table { font-size: 0.92rem; }

@@ -1,0 +1,8 @@
+/* Swarm panel (public/swarm-panel.js) */
+#swarm-panel .sw-hist { margin: .4em 0; }
+#swarm-panel .sw-hist-bars { height: 62px; border-bottom: 1px solid #8884; }
+#swarm-panel .sw-bin { display: inline-block; vertical-align: bottom; }
+#swarm-panel .sw-bar { background: currentColor; opacity: .55; margin: 0 1px; }
+#swarm-panel .sw-champ { font-weight: bold; }
+#swarm-panel .sw-cfg { max-width: 28em; }
+#swarm-sort { font-size: .8em; }

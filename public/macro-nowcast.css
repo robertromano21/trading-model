@@ -1,0 +1,6 @@
+/* Macro nowcast panel (public/macro-nowcast.js; macro.html and paper2.html) */
+.nowcast-table { width: 100%; border-collapse: collapse; }
+.nowcast-table th, .nowcast-table td { padding: .35rem .5rem; border-bottom: 1px solid rgba(255,255,255,.08); vertical-align: top; text-align: left; }
+.nc-bar { margin-top: .8rem; }
+.nc-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+.nc-chart { height: 260px; }

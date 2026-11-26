@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -7,7 +7,7 @@ class Program
 {
     static async Task Main()
     {
-        var url = "https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/2025-11-03?adjusted=true&apiKey=***REMOVED***";
+        var url = "https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/2025-11-03?adjusted=true&apiKey=" + System.Environment.GetEnvironmentVariable("MASSIVE_API_KEY");
 
         using var client = new HttpClient();
 

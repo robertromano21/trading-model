@@ -1,0 +1,27 @@
+/* Shared navigation, Schwab banner and dialogs for every Trading Model page (nav.js). */
+.suite-nav { position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px;
+  padding: 6px 16px; background: #0b1117; border-bottom: 1px solid #26323d; font: 13px system-ui, sans-serif; }
+.suite-nav .brand { color: #7fd1b9; font-weight: 700; margin-right: 6px; }
+.suite-nav a { color: #b9c6d0; text-decoration: none; padding: 4px 2px; border-bottom: 2px solid transparent; }
+.suite-nav a:hover { color: #fff; }
+.suite-nav a.active { color: #7fd1b9; border-color: #7fd1b9; }
+.suite-nav form { margin-left: auto; display: flex; gap: 6px; }
+.suite-nav input { width: 110px; background: #121b23; color: #e6e6e6; border: 1px solid #2e3b47; border-radius: 4px; padding: 3px 6px;
+  text-transform: uppercase; }
+.suite-nav button, .suite-dialog button { background: #22303b; color: #e6e6e6; border: 1px solid #3a4a57; border-radius: 4px;
+  padding: 3px 10px; cursor: pointer; font: inherit; }
+.suite-nav .chip { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: #1a2630; color: #9fb0bc; }
+.suite-nav .chip.ok { color: #6fd08c; } .suite-nav .chip.bad { color: #ff8a80; }
+.suite-banner { display: flex; gap: 12px; align-items: center; padding: 7px 16px; background: #3a2a12; color: #ffd8a0;
+  border-bottom: 1px solid #6b4b1c; font: 13px system-ui, sans-serif; }
+.suite-banner button { background: #6b4b1c; color: #fff; border: 1px solid #a07030; border-radius: 4px; padding: 3px 10px; cursor: pointer; }
+.suite-dialog { background: #141c23; color: #e6e6e6; border: 1px solid #3a4a57; border-radius: 10px; width: min(560px, 92vw);
+  font: 13px system-ui, sans-serif; }
+.suite-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+.suite-dialog label { display: block; margin: 8px 0; }
+.suite-dialog input { width: 100%; box-sizing: border-box; background: #0d1419; color: #e6e6e6; border: 1px solid #2e3b47;
+  border-radius: 4px; padding: 5px; }
+.suite-dialog pre { max-height: 220px; overflow: auto; background: #0b1015; padding: 8px; border-radius: 6px; white-space: pre-wrap; font-size: 12px; }
+.suite-dialog .row { display: flex; gap: 8px; margin-top: 10px; }
+.suite-dialog .muted { color: #8a9aa6; }
+.suite-dialog a { color: #7fd1b9; } .suite-dialog ol { padding-left: 20px; line-height: 1.5; } .suite-dialog ul.state { list-style: none; padding: 0; } .suite-dialog code { color: #ffd59a; }

@@ -1,0 +1,10 @@
+/* Black swan monitor (public/paper2-blackswan.js) */
+.bs-state { font-weight: 650; letter-spacing: 0.02em; }
+.bs-state-normal { color: #1a7f4c; }
+.bs-state-watch { color: #b06b00; }
+.bs-state-shock { color: #b42318; }
+.bs-state-recovery { color: #185fa5; }
+.blackswan-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.blackswan-table th, .blackswan-table td { padding: 0.25rem 0.5rem; text-align: right; border-bottom: 1px solid #ddd; }
+.blackswan-table th:first-child, .blackswan-table td:first-child { text-align: left; }
+.blackswan-events { padding-left: 1.1rem; }

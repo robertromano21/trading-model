@@ -1,0 +1,22 @@
+/* Macro calendar card + release ticker (times in ET). */
+.macro-wrap { margin: 1.2rem 0 1.6rem; }
+.macro-wrap h2 { margin-bottom: 0.2rem; }
+.macro-ticker {
+  display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.6rem 0 1rem;
+}
+.macro-chip {
+  border: 1px solid #2a3344; border-radius: 999px; padding: 0.25rem 0.7rem;
+  font-size: 0.85rem; background: #141a24; display: inline-flex; gap: 0.4rem; align-items: baseline;
+}
+.macro-chip .z { font-variant-numeric: tabular-nums; font-weight: 600; }
+.macro-chip.hawkish { border-color: #8a3a3a; }
+.macro-chip.dovish { border-color: #2e6b46; }
+.macro-chip.pending { opacity: 0.85; }
+.macro-cal table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.macro-cal th, .macro-cal td { text-align: left; padding: 0.35rem 0.45rem; border-bottom: 1px solid #223; }
+.macro-cal .hi { font-weight: 600; }
+.macro-cal .manual { font-style: italic; }
+.macro-form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: end; margin: 0.8rem 0; }
+.macro-form label { display: flex; flex-direction: column; font-size: 0.8rem; gap: 0.15rem; }
+.macro-form input, .macro-form select { padding: 0.25rem 0.4rem; }
+.macro-honesty { font-size: 0.88rem; max-width: 70rem; }

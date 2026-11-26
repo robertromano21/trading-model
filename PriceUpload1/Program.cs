@@ -6,8 +6,24 @@ using System.Globalization;
 
 class Program
 {
+    static HttpClient CreateClient(string apiKey)
+    {
+        var client = new HttpClient();
+        client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey.Trim());
+        return client;
+    }
+
     static async Task Main()
     {
+        // The Massive key is read from the environment (never hard-code it; this repository is public).
+        string apiKey = Environment.GetEnvironmentVariable("MASSIVE_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            Console.WriteLine("Set the MASSIVE_API_KEY environment variable first.");
+            return;
+        }
+
         string apiDate = "";
         Console.WriteLine("Choose Option:");
         Console.WriteLine("1 - Single Date");
@@ -58,12 +74,12 @@ class Program
                         currentDate.ToString("yyyy-MM-dd");
 
                     string rangeUrl =
-    $"https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/{rangeApiDate}?adjusted=true&apiKey=***REMOVED***";
+    $"https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/{rangeApiDate}?adjusted=true";
 
                     Console.WriteLine(
                         $"Downloading: {rangeApiDate}");
 
-                    using (var client = new HttpClient())
+                    using (var client = CreateClient(apiKey))
                     {
                         try
                         {
@@ -109,9 +125,9 @@ class Program
         }
 
         var url =
-            $"https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/{apiDate}?adjusted=true&apiKey=***REMOVED***";
+            $"https://api.massive.com/v2/aggs/grouped/locale/us/market/stocks/{apiDate}?adjusted=true";
 
-        using (var client = new HttpClient())
+        using (var client = CreateClient(apiKey))
         {
             try
             {

@@ -1,0 +1,195 @@
+/* Command console (public/analyst-dock.js). External file: the dashboard CSP blocks injected <style> tags. */
+@font-face {
+  font-family: "TM Pixel";
+  src: url("/fonts/PressStart2P.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+#tm-console {
+  --tmc-border: #8f8f8f;
+  --tmc-gold: #caa96d;
+  --tmc-pixel: "TM Pixel", ui-monospace, Consolas, monospace;
+  --tmc-plain: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  position: fixed; right: 12px; bottom: 8px; z-index: 2147479000;
+  width: min(560px, calc(100vw - 24px));
+  display: flex; flex-direction: column; gap: 4px;
+  color: #fff; font: 13px/1.5 var(--tmc-plain);
+}
+#tm-console * { box-sizing: border-box; }
+/* Reset page-wide input/button styles (the dashboard sets min-height, padding, weight and hover colors). */
+#tm-console button, #tm-console textarea {
+  min-height: 0; height: auto; width: auto; margin: 0; font-weight: 400; box-shadow: none;
+  text-transform: none; letter-spacing: normal;
+}
+#tm-console button { font-family: var(--tmc-pixel); cursor: pointer; }
+#tm-console button:not(:disabled):hover { background-color: #2a2a2a; color: #fff; border-color: #bbb; }
+
+/* ---- log panel ---- */
+#tm-console .tmc-logwrap {
+  position: relative; display: flex; flex-direction: column;
+  height: min(46vh, 460px); min-height: 160px; max-height: calc(100vh - 140px);
+  background: #000; border: 1px solid var(--tmc-border); border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(210, 210, 210, .12) inset, 0 2px 8px rgba(0, 0, 0, .55);
+  overflow: hidden; resize: vertical;
+}
+#tm-console[data-mode="prompt"] .tmc-logwrap,
+#tm-console[data-mode="tab"] .tmc-logwrap,
+#tm-console[data-mode="tab"] .tmc-box { display: none; }
+
+#tm-console .tmc-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 6px 8px; border-bottom: 1px solid #333; background: #0b0b0b;
+}
+#tm-console .tmc-title { font: 9px/1.6 var(--tmc-pixel); color: var(--tmc-gold); text-transform: uppercase; letter-spacing: .5px; }
+#tm-console .tmc-title { flex: 1; }
+#tm-console .tmc-filters { order: 3; flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 3px; }
+#tm-console .tmc-tools { display: flex; gap: 3px; }
+#tm-console .tmc-head button {
+  font-size: 7px; line-height: 1.6; padding: 3px 5px; border-radius: 0;
+  background: #161616; color: #ddd; border: 1px solid #555;
+}
+#tm-console .tmc-head button:hover { border-color: var(--tmc-border); color: #fff; }
+#tm-console .tmc-chip[aria-pressed="true"] { background: #f2f2f2; color: #000; border-color: #f2f2f2; }
+#tm-console .tmc-voice[aria-pressed="false"] { color: #888; text-decoration: line-through; }
+
+#tm-console .tmc-log {
+  flex: 1; overflow-y: auto; padding: 8px 10px 10px;
+  overflow-wrap: anywhere; scrollbar-color: #555 #000;
+}
+#tm-console[data-font="pixel"] .tmc-log { font: 9px/1.95 var(--tmc-pixel); }
+#tm-console[data-font="plain"] .tmc-log { font: 13px/1.55 var(--tmc-plain); }
+#tm-console .tmc-empty { color: #9a9a9a; margin: 4px 0; }
+
+#tm-console .tmc-e {
+  --c: #ddd;
+  display: grid; grid-template-columns: auto auto 1fr; column-gap: 7px; align-items: baseline;
+  padding: 3px 0 3px 7px; margin: 2px 0; border-left: 3px solid var(--c);
+}
+#tm-console .tmc-ts { color: #7a7a7a; font-size: .85em; white-space: nowrap; }
+#tm-console .tmc-tag { color: var(--c); font-size: .85em; white-space: nowrap; }
+#tm-console .tmc-body { min-width: 0; color: #f0f0f0; }
+#tm-console .tmc-body p { margin: 0 0 4px; }
+#tm-console .tmc-body ul { margin: 2px 0 4px 16px; padding: 0; }
+#tm-console .tmc-body pre { margin: 0; white-space: pre-wrap; font: inherit; }
+#tm-console .tmc-body code { color: #ffd580; }
+#tm-console .tmc-body details { margin: 2px 0; color: #bbb; }
+#tm-console .tmc-body summary { cursor: pointer; color: var(--c); }
+#tm-console .tmc-meta { color: #aaa; margin-bottom: 3px; }
+#tm-console .tmc-b { border: 1px solid #666; padding: 0 4px; }
+#tm-console .tmc-b.fb { border-color: #a66; }
+#tm-console .tmc-fus { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+#tm-console .tmc-fu { font-size: 7px; padding: 3px 6px; background: #111; color: #cfe3ff; border: 1px solid #445; border-radius: 0; }
+#tm-console .tmc-opt { font-size: 8px; padding: 5px 8px; background: #f2f2f2; color: #000; border: 1px solid var(--tmc-border); border-radius: 0; }
+#tm-console .tmc-opt:disabled { opacity: .45; cursor: default; }
+#tm-console .tmc-opt.on { opacity: 1; outline: 2px solid #dfc687; }
+
+/* Allow / Cancel prompt for state-changing analyst actions */
+#tm-console .tmc-confirm { margin: 4px 0; padding: 7px 9px; border: 1px solid #dfc687; background: #15120a; }
+#tm-console .tmc-confirm.done { border-color: #555; background: #0c0c0c; opacity: .8; }
+#tm-console .tmc-cf-q { font: 8px/1.8 var(--tmc-pixel); color: var(--tmc-gold); text-transform: uppercase; letter-spacing: .5px; }
+#tm-console .tmc-cf-act { margin: 2px 0 4px; }
+#tm-console .tmc-cf-act code, #tm-console .tmc-cf-args code { background: #222; color: #cfe3ff; padding: 0 4px; }
+#tm-console .tmc-cf-aff { margin: 2px 0 4px 16px; padding: 0; }
+#tm-console .tmc-cf-args { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; font-size: .92em; }
+#tm-console .tmc-cf-btns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#tm-console .tmc-allow { font-size: 8px; padding: 6px 12px; background: #dfc687; color: #000; border: 1px solid #dfc687; border-radius: 0; }
+#tm-console .tmc-cancel { font-size: 8px; padding: 6px 12px; background: #111; color: #fff; border: 1px solid var(--tmc-border); border-radius: 0; }
+#tm-console .tmc-allow:focus-visible, #tm-console .tmc-cancel:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+#tm-console .tmc-cf-done { color: #aaa; font-style: italic; }
+#tm-console .tmc-act.k-manual, #tm-console .tmc-act.k-clarify { color: #ffe6a8; }
+#tm-console .tmc-act.k-error { color: #ff9a9a; }
+#tm-console .tmc-tablewrap { overflow-x: auto; margin: 4px 0; }
+#tm-console .tmc-table { border-collapse: collapse; font-size: .92em; }
+#tm-console .tmc-table th, #tm-console .tmc-table td { border: 1px solid #333; padding: 1px 6px; text-align: right; white-space: nowrap; }
+#tm-console .tmc-table th { color: var(--tmc-gold); font-weight: normal; }
+#tm-console .tmc-hint { color: #8a8a8a; font-size: .85em; margin-top: 3px; }
+#tm-console .tmc-cmd { color: #fff; font-weight: bold; }
+#tm-console .tmc-work { color: #aaa; }
+#tm-console .tmc-dots::after { content: ""; animation: tmc-dots 1.2s steps(4) infinite; }
+@keyframes tmc-dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+
+/* per-type colors */
+#tm-console .t-user          { --c: #ffffff; }
+#tm-console .t-analyst,
+#tm-console .t-pending       { --c: #dfc687; }
+#tm-console .t-trade_main    { --c: #7ee787; }
+#tm-console .t-trade_swarm   { --c: #79c0ff; }
+#tm-console .t-trade_crypto  { --c: #ffa657; }
+#tm-console .t-trade_options { --c: #d2a8ff; }
+#tm-console .t-signals       { --c: #56d4dd; }
+#tm-console .t-black_swan    { --c: #ff6b6b; }
+#tm-console .t-dollar_shock  { --c: #ff9e64; }
+#tm-console .t-regime        { --c: #e3b341; }
+#tm-console .t-macro         { --c: #f0e68c; }
+#tm-console .t-system        { --c: #9a9a9a; }
+#tm-console .t-err           { --c: #ff7b72; background: rgba(120, 20, 20, .35); }
+#tm-console .t-user .tmc-body { color: #fff; }
+#tm-console .sev-warn .tmc-body, #tm-console .sev-warning .tmc-body { color: #ffe08a; }
+#tm-console .sev-critical .tmc-body, #tm-console .sev-error .tmc-body { color: #ffb3ad; }
+
+/* log filter */
+#tm-console[data-filter="analyst"] .tmc-e:not(.g-analyst),
+#tm-console[data-filter="trades"]  .tmc-e:not(.g-trades),
+#tm-console[data-filter="signals"] .tmc-e:not(.g-signals),
+#tm-console[data-filter="risk"]    .tmc-e:not(.g-risk),
+#tm-console[data-filter="macro"]   .tmc-e:not(.g-macro),
+#tm-console[data-filter="system"]  .tmc-e:not(.g-system) { display: none; }
+
+#tm-console .tmc-jump {
+  position: absolute; right: 14px; bottom: 10px; font-size: 7px; padding: 4px 7px;
+  background: #f2f2f2; color: #000; border: 1px solid var(--tmc-border); border-radius: 0;
+}
+#tm-console .tmc-jump[hidden] { display: none; }
+
+/* ---- command box ---- */
+#tm-console .tmc-box {
+  background: rgba(0, 0, 0, .86); border: 1px solid var(--tmc-border); border-radius: 6px;
+  box-shadow: 0 0 0 1px rgba(210, 210, 210, .12) inset, 0 2px 8px rgba(0, 0, 0, .55);
+  padding: 4px 6px 6px;
+}
+#tm-console .tmc-sub {
+  display: flex; justify-content: space-between; align-items: center; gap: 6px;
+  font: 7px/1.8 var(--tmc-pixel); color: var(--tmc-gold); padding: 1px 1px 3px;
+}
+#tm-console .tmc-unlock { font-size: 7px; padding: 2px 6px; background: #2a2410; color: #f2c14e; border: 1px solid #f2c14e; border-radius: 0; }
+#tm-console .tmc-unlock[hidden] { display: none; }
+#tm-console .tmc-input {
+  display: block; width: 100% !important; min-height: 28px; max-height: 120px; resize: none; overflow-y: auto;
+  background: rgba(255, 255, 255, .96); color: #000; border: 1px solid #7f7f7f; border-radius: 0;
+  padding: 5px 7px; font: 11px/1.7 var(--tmc-pixel);
+}
+#tm-console .tmc-input::placeholder { color: #777; }
+#tm-console .tmc-btns { display: flex; align-items: center; gap: 6px; padding-top: 4px; }
+#tm-console .tmc-btns button {
+  font-size: 8px; line-height: 1.5; padding: 3px 7px; border-radius: 0;
+  border: 1px solid var(--tmc-border); background: #f2f2f2; color: #000;
+}
+#tm-console .tmc-btns .tmc-logbtn, #tm-console .tmc-btns .tmc-hide { background: #161616; color: #ddd; border-color: #555; }
+#tm-console .tmc-status { flex: 1; font: 7px/1.6 var(--tmc-pixel); color: #aaa; }
+#tm-console[data-busy="1"] .tmc-send { opacity: .5; }
+
+/* ---- collapsed tab ---- */
+#tm-console .tmc-tab {
+  display: none; align-self: flex-end; position: relative;
+  font-size: 8px; line-height: 1.5; padding: 7px 10px; border-radius: 6px 6px 0 0;
+  background: rgba(0, 0, 0, .86); color: var(--tmc-gold); border: 1px solid var(--tmc-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .55);
+}
+#tm-console[data-mode="tab"] .tmc-tab { display: block; }
+#tm-console .tmc-tab[data-unread="1"]::after {
+  content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; background: #f2c14e;
+}
+#tm-console :focus-visible { outline: 2px solid #f2c14e; outline-offset: 1px; }
+
+/* Alerts UI: the console replaces the floating Alerts button and holds the voice hint. */
+html.tm-has-console #tm-alerts-fab,
+html.tm-has-console #tm-alerts-unlock { display: none !important; }
+html.tm-has-console #tm-alerts-sub { bottom: calc(var(--tm-console-h, 60px) + 20px); }
+
+@media (max-width: 640px) {
+  #tm-console { right: 6px; left: 6px; width: auto; }
+  #tm-console .tmc-filters { display: none; }
+}
+@media print { #tm-console { display: none; } }

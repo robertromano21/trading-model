@@ -152,7 +152,27 @@ def dated_source(market_date):
                  if path.is_file()), None)
 
 
+def stamped_dates(records):
+    """UTC calendar dates of the bars' Massive millisecond timestamps (the "t" field)."""
+    return {datetime.fromtimestamp(record["t"] / 1000, timezone.utc).date()
+            for record in records if type(record.get("t")) is int}
+
+
+def check_session_date(records, market_date):
+    """Reject a file whose bars are stamped with a different session than its file name or request."""
+    if isinstance(market_date, str):
+        market_date = datetime.strptime(market_date, "%Y-%m-%d").date()
+    stamped = stamped_dates(records)
+    wrong = sorted(day for day in stamped if day != market_date)
+    if wrong:
+        raise ValueError(
+            f"The JSON for {market_date} contains bars stamped {', '.join(day.isoformat() for day in wrong[:3])}. "
+            "The file name date does not match its contents; move the file aside and re-download that session."
+        )
+
+
 def market_bars(records, market_date):
+    check_session_date(records, market_date)
     bars = []
     seen = set()
     for record in records:

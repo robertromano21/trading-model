@@ -11,14 +11,19 @@ Local JSON imports need no API key.
 Choose a date, a date range, or all pending files in the dashboard.
 Use the History tab to build local SQLite history and look up a ticker.
 Select Update Excel with latest session to refresh the workbook.
-Stop the server with Ctrl+C. Use -NoBrowser to skip opening localhost.
+Stop the server with Ctrl+C, or close the last dashboard browser tab
+(it exits after a short grace period so reloads and other tabs stay up).
+Set DASHBOARD_AUTO_SHUTDOWN=off to keep it running with no tab open.
+A long Schwab daily backfill keeps running after the dashboard exits.
+Use -NoBrowser to skip opening localhost.
 The default launch reuses a running dashboard or picks a free port when
 starting with a different configuration.
+Run this script as .\start-server.ps1 (note the backslash).
 #>
 [CmdletBinding()]
 param(
     [ValidateRange(1, 65535)]
-    [int]$Port = 3000,
+    [int]$Port = 3003,
     [switch]$NoBrowser
 )
 

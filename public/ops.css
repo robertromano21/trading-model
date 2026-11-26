@@ -1,0 +1,20 @@
+body { margin: 0; }
+.ops { max-width: 1400px; margin: 0 auto; padding: 10px 16px 40px; }
+.box { background: #121a21; border: 1px solid #26323d; border-radius: 8px; padding: 8px 14px; margin: 12px 0; }
+.jump { font-size: 13px; margin: 6px 0; } .jump a { color: #9cc9ff; }
+.buttons-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 6px; }
+.buttons-grid button { text-align: left; }
+.md table { border-collapse: collapse; margin: 6px 0 14px; font-size: 12px; }
+.md th, .md td { border: 1px solid #26323d; padding: 3px 7px; text-align: right; } .md th:first-child, .md td:first-child { text-align: left; }
+.md h1 { font-size: 18px; } .md h2 { font-size: 15px; color: #9fb0bc; }
+.bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.bar input, .bar select { background: #0d1419; color: #e6e6e6; border: 1px solid #2e3b47; border-radius: 4px; padding: 4px; }
+table.logs { font: 12px ui-monospace, Consolas, monospace; width: 100%; }
+table.logs td { vertical-align: top; padding: 2px 6px; border-bottom: 1px solid #1b252d; }
+table.logs tr.error td { color: #ff9c9c; } table.logs tr.warn td { color: #ffe27a; }
+table.logs td.msg { white-space: pre-wrap; word-break: break-word; }
+.small { font-size: 12px; } .ok { color: #6fd08c; } .bad { color: #ff8a80; }
+pre#job-log { max-height: 320px; overflow: auto; background: #0b1015; padding: 8px; border-radius: 6px; font-size: 12px; white-space: pre-wrap; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; font-size: 13px; } .kv dt { color: #8a9aa6; } .kv dd { margin: 0; }
+
+#schwab-daily.schwab-daily { margin: .6rem 0; }

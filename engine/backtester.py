@@ -21,6 +21,8 @@ from fetch_and_model import DATABASE
 from price_history import complete_market_dates, coverage, open_history
 
 LOGGER = logging.getLogger(__name__)
+# Sessions after the cached dividend window that may run price-only instead of failing the backtest.
+DIVIDEND_GRACE_SESSIONS = 5
 
 
 def parameter(label, default, minimum, maximum, step=1):
@@ -378,8 +380,12 @@ def run(connection, config):
     dividends = {}
     if config["includeDividends"]:
         cached = dividend_coverage(connection)
-        if not cached or cached["firstDate"] > dates[0] or cached["lastDate"] < dates[-1]:
+        uncovered = [day for day in dates if cached and day > cached["lastDate"]]
+        if not cached or cached["firstDate"] > dates[0] or len(uncovered) > DIVIDEND_GRACE_SESSIONS:
             raise ValueError("Dividend data does not cover the price and warm-up window. Sync dividends or choose price-only returns.")
+        if uncovered:
+            warnings.append(f"Dividend data ends {cached['lastDate']}; the last {len(uncovered)} session(s) use "
+                            "price-only returns. Sync dividends to cover them.")
         dividends = read_dividends(connection, end, benchmark if config["mode"] == "single" else None)
 
     series, entries = load_prices(connection, config, dates, index, dividends, benchmark)

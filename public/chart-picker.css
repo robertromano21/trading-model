@@ -1,0 +1,19 @@
+/* Top-right chart picker (nav.js): dropdown when a typed symbol matches several instruments (coin vs stock/ETF). */
+.suite-nav form.chart-picker { position: relative; }
+.suite-nav form.chart-picker input { width: 130px; }
+.chart-picker-menu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 60; min-width: 300px; max-width: 420px;
+  background: #141c23; border: 1px solid #3a444f; border-radius: 8px; padding: 4px; box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  display: flex; flex-direction: column; gap: 2px; }
+.chart-picker-menu[hidden] { display: none; }
+.chart-picker-option { display: grid; grid-template-columns: 58px 1fr; grid-template-rows: auto auto; column-gap: 8px; text-align: left;
+  background: transparent; color: #e6e6e6; border: 1px solid transparent; border-radius: 6px; padding: 6px 8px; cursor: pointer; }
+.chart-picker-option:hover, .chart-picker-option:focus { background: #1d2a35; border-color: #4f9c83; outline: none; }
+.chart-picker-option .cp-symbol { grid-row: 1 / span 2; font-weight: 700; align-self: center; }
+.chart-picker-option .cp-name { font-size: 13px; }
+.chart-picker-option .cp-detail { font-size: 11px; color: #9aa5b1; }
+.chart-picker-option.is-crypto .cp-symbol { color: #f2c14e; }
+.chart-picker-option.is-stock .cp-symbol { color: #8bd3dd; }
+/* ticker.html?asset=crypto (ticker.js): hide stock-only panels (order ticket, AI flag, options, stock forecasts). */
+body.crypto-mode .quote-head .actions, body.crypto-mode #options-box, body.crypto-mode #prob-forecast,
+body.crypto-mode #ticker-scorecard-host { display: none; }
+.chart-picker-option.is-schwab .cp-symbol { color: #c3a6ff; }

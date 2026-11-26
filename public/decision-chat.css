@@ -1,0 +1,21 @@
+.dchat { border: 1px solid #2e3b47; border-radius: 10px; padding: 10px 14px; margin: 14px 0; background: #10171d; font: 13px system-ui, sans-serif; color: #e6e6e6; }
+  .dchat h2 { margin: 2px 0 8px; font-size: 16px; }
+  .dchat .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .dchat input, .dchat select { background: #0d1419; color: #e6e6e6; border: 1px solid #2e3b47; border-radius: 4px; padding: 4px 6px; font: inherit; }
+  .dchat button { background: #22303b; color: #e6e6e6; border: 1px solid #3a4a57; border-radius: 4px; padding: 3px 10px; cursor: pointer; font: inherit; }
+  .dchat .log { max-height: 560px; overflow: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
+  .dchat .msg { border: 1px solid #22303b; border-radius: 8px; padding: 6px 10px; background: #141d24; }
+  .dchat .msg.user { background: #1b2733; margin-left: 15%; border-color: #2f4a63; }
+  .dchat .msg.ai { background: #17231c; margin-right: 10%; border-color: #2c5a3a; white-space: pre-wrap; }
+  .dchat .msg.sel { outline: 2px solid #7fd1b9; }
+  .dchat .meta { color: #8a9aa6; font-size: 11px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .dchat .kind { padding: 0 6px; border-radius: 8px; background: #26323d; color: #cfe3ee; text-transform: uppercase; font-size: 10px; }
+  .dchat .kind.fill, .dchat .kind.entry { background: #1f5131; } .dchat .kind.stop, .dchat .kind.blocked { background: #5a1d1d; }
+  .dchat .kind.skip, .dchat .kind.advisory { background: #574a12; } .dchat .kind.watch { background: #3a2f5c; }
+  .dchat .why { color: #aebdc8; font-size: 12px; margin-top: 2px; }
+  .dchat .flag { padding: 0 6px; border-radius: 8px; font-weight: 700; font-size: 10px; }
+  .dchat .flag.GREEN { background: #1f5131; color: #9ff0b5; } .dchat .flag.YELLOW { background: #574a12; color: #ffe27a; } .dchat .flag.RED { background: #5a1d1d; color: #ff9c9c; }
+  .dchat form { display: flex; gap: 6px; margin-top: 8px; } .dchat form input { flex: 1; }
+  .dchat .ctx { color: #7fd1b9; font-size: 12px; }
+  .dchat a { color: #9cc9ff; }
+.dchat .muted { color: #8a9aa6; }

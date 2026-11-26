@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Strategy paper trading monitor</title>
+  <link rel="stylesheet" href="/paper2.css">
+  <link rel="stylesheet" href="/macro-calendar.css">
+  <script src="/nav.js"></script>
+  <script type="module" src="/paper2.js"></script>
+  <script type="module" src="/live.js"></script>
+  <script type="module" src="/paper2-extra.js"></script>
+  <script type="module" src="/tax-panel.js"></script>
+  <script type="module" src="/paper2-drift.js"></script>
+<script type="module" src="/swarm-panel.js"></script>
+  <script type="module" src="/crypto-panel.js"></script>
+  <script type="module" src="/attribution-panel.js"></script>
+  <script type="module" src="/paper2-prob.js"></script>
+  <script type="module" src="/paper2-macro.js"></script>
+  <script type="module" src="/paper2-allocation.js"></script>
+  <script type="module" src="/macro-calendar.js"></script>
+  <script type="module" src="/macro-nowcast.js"></script>
+  <script type="module" src="/paper2-blackswan.js"></script>
+  <script src="/decision-chat.js" defer></script>
+  <link rel="stylesheet" href="/options.css">
+  <script type="module" src="/options-ui.js"></script>
+  <script src="/alerts/alerts.js" defer></script>
+</head>
+<body>
+  <header>
+    <h1>Strategy paper trading</h1>
+    <p class="sub">TSMOM core + regime mean-reversion overlay, plus ORB day trading. Paper simulation (the autopilot runs it on schedule); real orders only through the manual live-trading ticket below.</p>
+    <label><input type="checkbox" id="dry"> Show last dry run</label>
+    <span id="updated" class="muted"></span>
+  </header>
+  <main>
+    <p id="error" class="error" hidden></p>
+    <section class="cards" id="cards"></section>
+    <section><h2>Risk &amp; regime</h2><div id="risk-state" class="muted">Loading…</div><div id="macro-state" class="muted"></div></section>
+    <section id="nowcast">
+      <h2>Macro nowcasts (ours, raw data only)</h2>
+      <p class="muted">Next CPI / core PCE / jobs / GDP prints from point-in-time data; outside forecasts shown for comparison only. <a href="/macro.html">Full page</a>. Research only; the paper accounts are unchanged.</p>
+      <div id="nowcast-panel" class="muted">Loading…</div>
+    </section>
+    <section id="regime-allocation">
+      <h2>Regime allocation (vol and overextension)</h2>
+      <p class="muted">Backtested weights for the risk-on (plain TSMOM), defensive and hedge sleeves as volatility and overextension change. Recommendation only; the paper account is unchanged.</p>
+      <div id="allocation-panel" class="muted">Loading…</div>
+    </section>
+    <section id="black-swan" class="blackswan-wrap">
+      <h2>Geopolitical and black swan monitor</h2>
+      <p class="muted">News and market confirmation have to agree before a flag becomes actionable.
+        Playbooks are paper only. History of shocks is short, so treat the event-study numbers as rough.</p>
+      <div id="black-swan-panel" class="muted">Loading…</div>
+    </section>
+    <section id="macro" class="macro-wrap">
+      <h2>Economic calendar and releases (times in ET)</h2>
+      <p class="muted">Official and fallback release times in America/New_York. Surprises are standardized versus history.
+        Most of a high-impact move often happens before a retail system can trade, and spreads widen at the print.
+        Conference Board and some PMI headlines may need a manual consensus entry.</p>
+      <p id="macro-error" class="error" hidden></p>
+      <p id="macro-watcher" class="muted"></p>
+      <div id="macro-ticker" class="macro-ticker"></div>
+      <div id="macro-calendar"></div>
+      <form id="macro-cons-form" class="macro-form">
+        <label>Event id <input id="macro-cons-id" placeholder="cpi" required></label>
+        <label>Period <input id="macro-cons-period" placeholder="2026-10" required></label>
+        <label>Consensus <input id="macro-cons-value" type="number" step="any" required></label>
+        <button type="submit">Save consensus</button>
+        <button type="button" id="macro-refresh">Refresh calendar</button>
+        <span id="macro-consensus-status" class="muted"></span>
+      </form>
+      <h3>Event study</h3>
+      <div id="macro-event-study" class="muted">Loading…</div>
+      <h3>Overseas overnight study</h3>
+      <div id="macro-overnight-study" class="muted">Loading…</div>
+    </section>
+    <section id="drift">
+      <h2>Drift vs backtest</h2>
+      <p class="muted">Realized paper (and later live) behavior against the walk-forward 5–95% and 1–99% bands, plus CUSUM for persistent drift.</p>
+      <div id="drift-panel" class="muted">Loading…</div>
+    </section>
+    <section id="swarm">
+      <h2>Swarm: simulated $10k accounts</h2>
+      <p class="muted">Shadow accounts on variants of the shared strategy code (no orders). Ranked on pre-holdout data only, then scored once on a sealed holdout with deflated Sharpe, PBO, White's Reality Check / Hansen SPA and Holm/BH. Promotion to the real paper account is a recommendation only.</p>
+      <div id="swarm-panel" class="muted">Loading…</div>
+    </section>
+    <section id="crypto">
+      <h2>Crypto: 24 simulated $10k accounts</h2>
+      <p class="muted">Crypto-only PAPER shadow accounts (ids 200-219, plus SHADOW SBIT short experiments 220-223; no orders, ever). Coinbase daily closes, Schwab Crypto fees (0.75% per side), long-only spot. Backtest ranked on pre-holdout data only.</p>
+      <div id="crypto-panel" class="muted">Loading…</div>
+    </section>
+    <section id="decision-chat"></section>
+    <section><h2>Equity</h2><canvas id="equity" width="900" height="220"></canvas></section>
+    <section><h2>Positions</h2><table id="positions"></table></section>
+    <section><h2>Open orders (next session)</h2><table id="orders"></table></section>
+    <section><h2>Current targets</h2><table id="targets"></table></section>
+    <section><h2>Fills (swing)</h2><table id="fills"></table></section>
+    <section><h2>Reconciliation vs. shadow backtest</h2><table id="recon"></table></section>
+    <section><h2>Recent decisions</h2><table id="decisions"></table></section>
+    <section><h2>Runs</h2><table id="runs"></table></section>
+    <section><h2>Day trading (ORB, flat by close, $10k, PDT-limited)</h2>
+      <section class="cards" id="dt-cards"></section>
+      <h3>Daily log (P&amp;L, PDT / breaker skips)</h3><table id="dt-daily"></table>
+      <h3>Recent day trades</h3><table id="dt-trades"></table>
+      <h3>Latest Schwab quotes (cached)</h3><table id="dt-quotes"></table>
+      <h3>Day-trading research</h3><table id="dt-research"></table><p class="muted" id="dt-note"></p>
+    </section>
+    <section class="live">
+      <h2>Live trading (Schwab, manual only)</h2>
+      <p><strong id="live-state">…</strong> · environment: <span id="live-env">…</span> · per-order cap <span id="live-cap">–</span></p>
+      <p class="muted">Buy/Sell buttons on tickers open an order ticket. Every order needs a fresh preview and an explicit Confirm.
+        The paper trader, research and AI code never place orders.</p>
+      <button type="button" id="live-toggle">…</button> <button type="button" id="live-new">New order ticket</button>
+      <p id="live-error" class="error" hidden></p>
+      <h3>Order journal (Massive/LiveTrading/orders.jsonl)</h3>
+      <table><thead><tr><th>Time</th><th>Event</th><th>Symbol</th><th>Side</th><th>Qty</th><th>Order id</th><th>Status / message</th></tr></thead>
+        <tbody id="live-journal"></tbody></table>
+    </section>
+    <dialog id="ticket">
+      <form method="dialog" class="ticket">
+        <h3>Order ticket</h3>
+        <label>Symbol <input id="t-symbol" autocomplete="off" required></label>
+        <label>Side <select id="t-side"><option>BUY</option><option>SELL</option></select></label>
+        <label>Amount <input id="t-amount" type="number" min="0" step="any" required>
+          <select id="t-mode"><option value="shares">shares</option><option value="dollars">dollars</option></select></label>
+        <label>Type <select id="t-type"><option>MARKET</option><option>LIMIT</option></select></label>
+        <label id="t-limit-row" hidden>Limit price <input id="t-limit" type="number" min="0" step="0.01"></label>
+        <label>Time in force <select id="t-tif"><option>DAY</option><option value="GOOD_TILL_CANCEL">GTC</option></select></label>
+        <label>Account <select id="t-account"></select></label>
+        <div id="preview-box" hidden><pre id="preview-text"></pre></div>
+        <div class="buttons">
+          <button type="button" id="t-preview">Preview</button>
+          <button type="button" id="t-confirm" class="danger" disabled>Confirm &amp; send to Schwab</button>
+          <button type="button" id="t-cancel">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+    <section id="attribution"><h2>Return attribution (market, sectors, residual alpha)</h2>
+      <div id="attribution-panel" class="muted">Loading…</div></section>
+    <section id="tax-panel">
+      <h2>Tax lots (US taxable account)</h2>
+      <p class="muted" id="tax-disclaimer">Planning estimate only; not tax advice. Wash sales are tracked only inside this paper account.</p>
+      <p id="tax-error" class="error" hidden></p>
+      <p>Tax-aware engine: <span id="tax-enabled" class="muted">...</span></p>
+      <div id="tax-bill-cards"></div>
+      <h3>Open lots (unrealized short-term / long-term)</h3>
+      <table id="tax-lots"></table>
+      <h3>Harvest candidates</h3>
+      <table id="tax-harvest"></table>
+      <h3>Tax years</h3>
+      <table id="tax-years"></table>
+    </section>
+    <section id="prob-study"><h2>Probability model</h2><div id="prob-study-body" class="muted">Loading…</div><p class="muted" id="prob-study-note"></p></section>
+    <section><h2>Research summary</h2><table id="research"></table><p class="muted" id="research-note"></p></section>
+  </main>
+</body>
+</html>

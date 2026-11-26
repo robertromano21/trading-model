@@ -1,0 +1,64 @@
+{
+  "cik": "0001234567",
+  "tickers": ["DILU"],
+  "filings": {
+    "recent": {
+      "accessionNumber": [
+        "0001234567-26-000100",
+        "0001234567-26-000090",
+        "0001234567-26-000080",
+        "0001234567-26-000070",
+        "0001234567-26-000060",
+        "0001234567-25-000050"
+      ],
+      "filingDate": [
+        "2026-11-10",
+        "2026-11-05",
+        "2026-10-20",
+        "2026-09-15",
+        "2026-08-01",
+        "2025-06-01"
+      ],
+      "reportDate": [
+        "2026-11-10",
+        "2026-11-05",
+        "2026-10-20",
+        "2026-09-15",
+        "2026-06-30",
+        "2025-05-31"
+      ],
+      "form": [
+        "S-3ASR",
+        "8-K",
+        "8-K",
+        "424B5",
+        "10-Q",
+        "S-1"
+      ],
+      "items": [
+        "",
+        "3.02",
+        "2.02,9.01",
+        "",
+        "",
+        ""
+      ],
+      "primaryDocDescription": [
+        "Automatic shelf registration of common stock",
+        "Unregistered sales of equity securities",
+        "Results of operations",
+        "Prospectus supplement",
+        "Quarterly report",
+        "Initial registration"
+      ],
+      "primaryDocument": [
+        "s3asr.htm",
+        "d8k.htm",
+        "earn8k.htm",
+        "prospectus424b5.htm",
+        "form10q.htm",
+        "forms1.htm"
+      ]
+    }
+  }
+}

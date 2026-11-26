@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Research &amp; data · Trading Model</title>
+  <link rel="stylesheet" href="/paper2.css">
+  <link rel="stylesheet" href="/ops.css">
+  <script src="/nav.js"></script>
+  <script type="module" src="/ops.js"></script>
+  <script type="module" src="/fred-key.js"></script>
+  <script type="module" src="/massive-key.js"></script>
+</head>
+<body>
+  <main class="ops">
+    <nav class="jump"><a href="#jobs">Run jobs</a> · <a href="#research">Research &amp; walk-forward</a> · <a href="#attribution">Attribution</a> · <a href="#normality">Normality</a> ·
+      <a href="#daytrade">Day-trading research</a> · <a href="#health">Data health</a> · <a href="#schwab">Schwab</a> · <a href="#keys">Data keys</a> · <a href="/macro.html">Macro nowcasts</a> · <a href="#logs">Logs</a></nav>
+    <section id="jobs" class="box"><h2>Run jobs</h2>
+      <p class="muted">Allow-listed engine commands only (no free-form arguments). Jobs marked ⚠ change saved paper/data state and ask for confirmation. Nothing here can place a real order.</p>
+      <div id="job-buttons" class="buttons-grid"></div>
+      <h3>Recent jobs</h3><table id="job-table"></table>
+      <pre id="job-log" hidden></pre>
+    </section>
+    <section id="research" class="box"><h2>Research report (backtests, walk-forward OOS, multi-horizon, normality, attribution)</h2>
+      <div id="report" class="md muted">Loading…</div></section>
+    <section id="daytrade" class="box"><h2>Day-trading research (Schwab intraday)</h2><table id="dt-table"></table><ul id="dt-caveats" class="small muted"></ul></section>
+    <section id="health" class="box"><h2>Data health <button type="button" id="health-refresh">Re-check</button></h2>
+      <div id="health-body" class="muted">Loading (runs engine/data_health.py)…</div></section>
+    <section id="schwab" class="box"><h2>Schwab</h2><div id="schwab-body" class="muted">…</div>
+      <div id="schwab-daily" class="muted small schwab-daily"></div>
+      <button type="button" id="schwab-reauth">Set up / reauthorize Schwab…</button>
+      <button type="button" id="schwab-daily-run">Backfill 20-year daily history…</button></section>
+    <section id="keys" class="box"><h2>Data keys</h2><div data-massive-key></div><div data-fred-key></div>
+      <p class="small muted">Nowcasts and macro studies use it: <a href="/macro.html">Macro nowcasts</a>.</p></section>
+    <section id="logs" class="box"><h2>Logs</h2>
+      <div class="bar">
+        <select id="log-stream"><option value="all">All streams</option><option value="server">Server</option><option value="browser">Browser</option><option value="engine">Engine (Python)</option><option value="browser-sync">Browser (legacy errors)</option></select>
+        <select id="log-date"></select>
+        <select id="log-level"><option value="">All levels</option><option value="debug">Debug+</option><option value="info">Info+</option><option value="warn">Warn+</option><option value="error">Errors</option></select>
+        <input id="log-source" placeholder="Source (e.g. engine:paper, browser:/ticker, autopilot)" size="28">
+        <input id="log-request" placeholder="Request id" size="16">
+        <input id="log-q" placeholder="Search" size="16">
+        <button type="button" id="log-go">Show</button>
+        <label><input type="checkbox" id="log-follow"> Auto-refresh</label>
+        <span id="log-count" class="muted small"></span>
+      </div>
+      <table id="log-table" class="logs"></table>
+    </section>
+  </main>
+</body>
+</html>

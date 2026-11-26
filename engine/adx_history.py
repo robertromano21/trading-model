@@ -232,7 +232,7 @@ def replay(connection, through, rules, membership, tickers, *, breakdown=False):
     fields = {field for field, _, _ in dynamic_rules}
     fields.update(field for scenario in scenarios for field, _, _ in scenario)
     samples, details = [], []
-    by_condition = []
+    condition_totals = [[0, 0.0] for _ in scenarios]  # observations and return sum, pooled across tickers
     ticker_returns = {ticker: {"observations": 0, "mean": None} for ticker in tickers}
     pending = missing = 0
     for ticker in ticker_returns:
@@ -249,7 +249,10 @@ def replay(connection, through, rules, membership, tickers, *, breakdown=False):
         prices = np.array([tuple(bar)[1:] for bar in bars], dtype=float)
         metrics = indicator_history(days, prices, fields)
         if scenarios:
-            by_condition = condition_returns(days, metrics, sessions, scenarios)
+            for total, item in zip(condition_totals, condition_returns(days, metrics, sessions, scenarios)):
+                if item["observations"]:
+                    total[0] += item["observations"]
+                    total[1] += item["mean"] * item["observations"]
         matched = np.ones(len(bars), dtype=bool)
         for field, _, matches in dynamic_rules:
             matched &= matches(metrics[field])
@@ -266,6 +269,11 @@ def replay(connection, through, rules, membership, tickers, *, breakdown=False):
                 elif item > details[0]:
                     heapq.heapreplace(details, item)
     returns = np.concatenate(samples) if samples else np.array([])
+    by_condition = [
+        {"conditions": [[field, rule] for field, rule, _ in scenario], "observations": count,
+         "mean": total / count if count else None}
+        for scenario, (count, total) in zip(scenarios, condition_totals)
+    ] if any(count for count, _ in condition_totals) else []
     return {
         "status": "complete", "firstDate": str(sessions[0]), "through": through,
         "observations": len(returns), "tickers": len(samples), "pending": pending, "missing": missing,
