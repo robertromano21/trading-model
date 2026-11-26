@@ -3,7 +3,7 @@
 (() => {
   if (document.querySelector(".suite-nav")) return;
   // Bump on UI changes: injected scripts/styles get ?v=<this> so browsers fetch the new copy.
-  const V = (window.__tmAssetVersion = "202611260846");
+  const V = (window.__tmAssetVersion = "202611260930");
   if (!window.__tmClientLog) {
     const logger = document.createElement("script");
     logger.src = "/client-log.js?v=" + V;
@@ -28,7 +28,7 @@
     mod.src = src + "?v=" + V;
     document.head.appendChild(mod);
   }
-  // Command console (prompt + log of analyst Q&A and trade/alert decisions), lower right on every page.
+  // Centered command prompt and lower-right log of analyst Q&A and trade/alert decisions.
   if (![...document.querySelectorAll("script")].some((s) => (s.getAttribute("src") || "").includes("/analyst-dock.js"))) {
     const dock = document.createElement("script");
     dock.src = "/analyst-dock.js?v=" + V;

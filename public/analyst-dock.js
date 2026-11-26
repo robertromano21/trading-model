@@ -1,4 +1,4 @@
-/* Command console: always-visible command prompt + scrolling log, lower-right on every dashboard page
+/* Command console: centered command prompt + lower-right scrolling log on every dashboard page
  * (loaded by nav.js; styles live in /analyst-dock.css because the dashboard's Content-Security-Policy
  * blocks injected <style> tags).
  *
@@ -28,6 +28,11 @@
   const STORE = "tm.console.v1";
   const OLD_STORE = "tm.analystDock.v1";
   const HIST = "tm.console.history";
+  const LOG_LAYOUT = "tm.console.logLayout";
+  const LOG_ZOOMS = [100, 125, 150];
+  const LOG_MARGIN = 8;
+  const LOG_MIN_WIDTH = 240;
+  const LOG_MIN_HEIGHT = 126;
   const MAX_INPUT = 2000;           // the server builds up to ~9,500 chars of data context around the question
   const MAX_ENTRIES = 200;
   const MAX_BYTES = 150_000;
@@ -75,6 +80,15 @@
     let json = JSON.stringify(state);
     while (json.length > MAX_BYTES && state.entries.length > 5) { state.entries.shift(); json = JSON.stringify(state); }
     try { localStorage.setItem(STORE, json); } catch {}
+  }
+  function loadLogLayout() {
+    let saved;
+    try { saved = JSON.parse(localStorage.getItem(LOG_LAYOUT)); } catch {}
+    const layout = { zoom: LOG_ZOOMS.includes(saved?.zoom) ? saved.zoom : 100 };
+    for (const key of ["width", "height", "right", "bottom"]) {
+      if (Number.isFinite(saved?.[key])) layout[key] = saved[key];
+    }
+    return layout;
   }
   let history = [];
   try { history = JSON.parse(localStorage.getItem(HIST) || "[]").filter((x) => typeof x === "string").slice(-MAX_HIST); } catch {}
@@ -203,7 +217,12 @@
     root.innerHTML = `
       <div class="tmc-logwrap" id="tm-console-log">
         <header class="tmc-head">
-          <span class="tmc-title">Command log</span>
+          <div class="tmc-layout">
+            <button type="button" class="tmc-resize" title="Drag or use arrow keys to resize" aria-label="Resize command log">⤡</button>
+            <button type="button" class="tmc-title" title="Drag or use arrow keys to move" aria-label="Move command log">Command log</button>
+            <select class="tmc-zoom" aria-label="Command log zoom" title="Command log zoom">${LOG_ZOOMS.map((zoom) => `<option value="${zoom}">${zoom}%</option>`).join("")}</select>
+            <button type="button" class="tmc-reset-layout" title="Restore the default size, position, and zoom">Reset</button>
+          </div>
           <span class="tmc-filters" role="group" aria-label="Show in log">${GROUPS.map(([id, label]) =>
             `<button type="button" class="tmc-chip" data-filter="${id}" aria-pressed="false">${esc(label)}</button>`).join("")}</span>
           <span class="tmc-tools">
@@ -233,11 +252,99 @@
     const q = (sel) => root.querySelector(sel);
     const log = q(".tmc-log"), input = q(".tmc-input"), status = q(".tmc-status"), jump = q(".tmc-jump"), voiceBtn = q(".tmc-voice"),
       unlockBtn = q(".tmc-unlock"), tab = q(".tmc-tab"), logBtn = q(".tmc-logbtn");
+    const panel = q(".tmc-logwrap"), zoomSelect = q(".tmc-zoom");
+    const page = document.documentElement;
     input.value = state.draft || "";
 
-    // Tell the alert UI how tall the console is, so its hint and captions sit above it.
-    const syncHeight = () => document.documentElement.style.setProperty("--tm-console-h", Math.round(root.getBoundingClientRect().height) + "px");
-    if (window.ResizeObserver) new ResizeObserver(syncHeight).observe(root);
+    let layout = loadLogLayout();
+    let drag;
+    const clamp = (value, min, max) => Math.round(Math.min(Math.max(value, min), Math.max(min, max)));
+    function saveLayout() {
+      try { localStorage.setItem(LOG_LAYOUT, JSON.stringify(layout)); } catch {}
+    }
+    function applyLayout(stick) {
+      const { width, height, right, bottom } = layout;
+      const isFloating = [width, height, right, bottom].every(Number.isFinite);
+      panel.toggleAttribute("data-floating", isFloating);
+      if (isFloating) {
+        const { clientWidth, clientHeight } = page;
+        const maxWidth = Math.max(1, clientWidth - 2 * LOG_MARGIN);
+        const maxHeight = Math.max(1, clientHeight - 2 * LOG_MARGIN);
+        const fitWidth = clamp(width, Math.min(LOG_MIN_WIDTH, maxWidth), maxWidth);
+        const fitHeight = clamp(height, Math.min(LOG_MIN_HEIGHT, maxHeight), maxHeight);
+        panel.style.setProperty("--tmc-log-width", `${fitWidth}px`);
+        panel.style.setProperty("--tmc-log-height", `${fitHeight}px`);
+        panel.style.setProperty("--tmc-log-right", `${clamp(right, LOG_MARGIN, clientWidth - fitWidth - LOG_MARGIN)}px`);
+        panel.style.setProperty("--tmc-log-bottom", `${clamp(bottom, LOG_MARGIN, clientHeight - fitHeight - LOG_MARGIN)}px`);
+      } else {
+        panel.style.removeProperty("--tmc-log-width");
+        panel.style.removeProperty("--tmc-log-height");
+      }
+      panel.style.setProperty("--tmc-zoom", String(layout.zoom / 100));
+      zoomSelect.value = String(layout.zoom);
+      if (stick) scrollEnd(true);
+    }
+    function adjustPanel(action, bounds, dx, dy, stick) {
+      const moving = action === "move";
+      layout.right = page.clientWidth - bounds.right - (moving ? dx : 0);
+      layout.bottom = page.clientHeight - bounds.bottom - (moving ? dy : 0);
+      layout.width = moving ? bounds.width : clamp(bounds.width - dx, LOG_MIN_WIDTH, bounds.right - LOG_MARGIN);
+      layout.height = moving ? bounds.height : clamp(bounds.height - dy, LOG_MIN_HEIGHT, bounds.bottom - LOG_MARGIN);
+      applyLayout(stick);
+    }
+    for (const [selector, action] of [[".tmc-title", "move"], [".tmc-resize", "resize"]]) {
+      const handle = q(selector);
+      handle.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0 || drag) return;
+        drag = { id: event.pointerId, bounds: panel.getBoundingClientRect(), x: event.clientX, y: event.clientY, stick: atBottom() };
+        handle.setPointerCapture(event.pointerId);
+      });
+      handle.addEventListener("pointermove", (event) => {
+        if (drag?.id !== event.pointerId) return;
+        const dx = event.clientX - drag.x, dy = event.clientY - drag.y;
+        if (!drag.changed && dx === 0 && dy === 0) return;
+        drag.changed = true;
+        adjustPanel(action, drag.bounds, dx, dy, drag.stick);
+      });
+      handle.addEventListener("lostpointercapture", (event) => {
+        if (drag?.id !== event.pointerId) return;
+        if (drag.changed) saveLayout();
+        drag = undefined;
+      });
+      handle.addEventListener("keydown", (event) => {
+        if (event.altKey || event.ctrlKey || event.metaKey || drag) return;
+        const step = event.shiftKey ? 40 : 12;
+        const offset = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[event.key];
+        if (!Array.isArray(offset)) return;
+        event.preventDefault();
+        adjustPanel(action, panel.getBoundingClientRect(), ...offset, atBottom());
+        saveLayout();
+      });
+    }
+    zoomSelect.addEventListener("change", () => {
+      layout.zoom = Number(zoomSelect.value);
+      applyLayout(atBottom());
+      saveLayout();
+    });
+    q(".tmc-reset-layout").addEventListener("click", () => {
+      layout = { zoom: 100 };
+      applyLayout(atBottom());
+      saveLayout();
+    });
+    window.addEventListener("resize", () => applyLayout(atBottom()));
+
+    const prompt = q(".tmc-box");
+    // Centered captions clear the prompt on wide screens and the entire stacked console on narrow screens.
+    const syncHeight = () => {
+      const styles = document.documentElement.style;
+      styles.setProperty("--tm-console-h", root.offsetHeight + "px");
+      styles.setProperty("--tm-console-prompt-h", Math.max(prompt.offsetHeight, tab.offsetHeight) + "px");
+    };
+    if (window.ResizeObserver) {
+      const observer = new ResizeObserver(syncHeight);
+      observer.observe(root);
+      observer.observe(prompt);
+    }
 
     function setMode(mode, focus) {
       state.mode = mode;
@@ -507,6 +614,11 @@
     document.addEventListener("pointerdown", () => setTimeout(syncVoice, 50), { capture: true });
     document.addEventListener("keydown", () => setTimeout(syncVoice, 50), { capture: true });
     window.addEventListener("storage", (e) => {
+      if (e.key === LOG_LAYOUT && !drag) {
+        layout = loadLogLayout();
+        applyLayout(atBottom());
+        return;
+      }
       if (e.key !== STORE || busy) return;
       state = { ...load(), mode: state.mode, filter: state.filter, font: state.font };
       renderAll();
@@ -540,6 +652,7 @@
     renderAll();
     autosize();
     setMode(state.mode, false);
+    applyLayout(true);
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build);
