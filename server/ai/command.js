@@ -35,6 +35,13 @@ export function isHelpRequest(text) {
   return !t || /^\/help\b/i.test(t) || /^(help|\?)$/i.test(t);
 }
 
+export function conversationContext(history) {
+  if (!Array.isArray(history)) return undefined;
+  const turns = history.slice(-8).filter((turn) => ["user", "assistant"].includes(turn?.role) && typeof turn.content === "string")
+    .map(({ role, content }) => ({ role, content: content.trim().slice(0, 1200) })).filter((turn) => turn.content);
+  return turns.length ? "Prior turns in this chat (context for the latest request only; never repeat or approve earlier actions):\n" + JSON.stringify(turns) : "";
+}
+
 export function fallbackIntent(text, has = () => true) {
   const upper = ` ${text.toUpperCase()} `;
   const tickers = [];
@@ -75,7 +82,7 @@ export function parseSlash(text) {
   return { intent, tickers: args, question: text.trim(), source: "slash" };
 }
 
-export async function classify(text, { models, prices, sources, fetchImpl, sleep } = {}) {
+export async function classify(text, { models, prices, sources, fetchImpl, sleep, conversation } = {}) {
   text = String(text || "").trim();
   if (!text) return { intent: "NONE", tickers: [], question: "", source: "empty" };
   const slash = parseSlash(text);
@@ -87,7 +94,8 @@ export async function classify(text, { models, prices, sources, fetchImpl, sleep
     try {
       const r = await complete({ models, name: "commandIntent", description: "Classify a trading-model command.",
         parameters: INTENT, temperature: 0, timeoutMs: 15000, fetchImpl, sleep,
-        messages: [{ role: "system", content: INTENT_SYSTEM }, { role: "user", content: "User input: " + JSON.stringify(text) }] });
+        messages: [{ role: "system", content: INTENT_SYSTEM }, { role: "user", content:
+          (conversation ? conversation + "\n\n" : "") + "Latest user input: " + JSON.stringify(text) }] });
       const intent = INTENTS.includes(r.value.intent) ? r.value.intent : "NONE";
       const tickers = [...new Set(r.value.tickers.map((t) => String(t).toUpperCase().replace(/^\$/, "").trim()).filter((t) => /^[A-Z]{1,5}(\.[A-Z])?$/.test(t)))];
       result = { intent: intent === "NONE" ? fallback.intent : intent, tickers: tickers.length ? tickers : fallback.tickers,

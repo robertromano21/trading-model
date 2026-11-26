@@ -349,6 +349,8 @@ app.get("/api/research/probabilities", (_request, response) => sendResearchFile(
   response, "prob_latest.json", "No probability study yet. Run engine/research.py prob (or the Research: probability walk-forward job)."));
 app.get("/api/research/prob-walkforward", (_request, response) => sendResearchFile(
   response, "prob_walkforward.json", "No probability walk-forward yet. Run engine/research.py prob."));
+app.get("/api/research/dollar-study", (_request, response) => sendResearchFile(
+  response, "dollar_study.json", "The dollar study is waiting for its first refresh."));
 app.get("/api/daytrade/status", (request, response) => sendResearchFile(
   response, request.query.dry === "1" ? "daytrade_status_dryrun.json" : "daytrade_status.json",
   "No day-trading status yet. Run engine/daytrader.py run."));
@@ -368,6 +370,8 @@ app.get("/api/swarm/status", (_request, response) => sendResearchFile(
 app.get("/api/crypto/status", (_request, response) => sendResearchFile(
   response, join("crypto", "paper", "crypto_paper_status.json"),
   "No crypto paper accounts yet. Run engine/crypto_paper.py run --fetch."));
+app.get("/api/crypto/intraday", (_request, response) => sendResearchFile(
+  response, join("crypto", "paper", "crypto_intraday_status.json"), "The crypto intraday runner is waiting for its first check."));
 app.get("/api/regime-allocation", (_request, response) => sendResearchFile(
   response, join("regime_allocation", "summary.json"),
   "No regime-allocation study yet. Run engine/research.py regime-allocation (or python regime_allocation.py research)."));

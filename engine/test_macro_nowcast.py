@@ -1,5 +1,6 @@
 """Tests for engine/macro_nowcast.py: outside-forecast separation, point-in-time Data, panel loader, refresh lock."""
 import ast
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,6 +64,33 @@ class DataTests(unittest.TestCase):
         self.assertEqual(D.latest("CPIAUCSL:pch", "2020-03-11")[0], 0.4)
         self.assertTrue(np.isnan(D.latest("CPIAUCSL:pch", "2020-02-12")[0]))
         self.assertTrue(np.isnan(D.value_at("CPIAUCSL:pch", "2020-02-01", "2020-03-10")))
+
+    def test_trade_forecast_uses_only_released_dollar_and_trade_observations(self):
+        exports = pd.DataFrame({"value": [1.0, 7.0], "available": pd.to_datetime(["2026-05-08", "2026-08-15"])},
+                               index=pd.to_datetime(["2026-01-01", "2026-04-01"]))
+        dollar = pd.DataFrame({"value": [100.0, 110.0, 130.0],
+                               "available": pd.to_datetime(["2025-07-14", "2026-07-13", "2026-08-03"])},
+                              index=pd.to_datetime(["2025-07-08", "2026-07-08", "2026-07-28"]))
+        data = MN.Data(frames={"EXPGSC1:pca": exports, "DTWEXBGS": dollar})
+        features = MN.features(data, "EXPORTS_SAAR", "2026-07-01", "2026-07-30")
+        self.assertEqual(features["trade1"], 1.0)
+        self.assertAlmostEqual(features["dollarYoY"], 10.0)
+
+    def test_trade_growth_compares_levels_from_the_same_release_vintage(self):
+        with tempfile.TemporaryDirectory() as folder:
+            date = pd.Timestamp("2026-04-01")
+            release = pd.Timestamp("2026-07-30")
+            raw = pd.DataFrame({"value": [110.0], "available": [release]}, index=pd.DatetimeIndex([date], name="date"))
+            FM._write_frame(FM.vintage_path("EXPGSC1", folder), raw)
+            response = {"observations": [
+                {"date": "2026-01-01", "EXPGSC1_20260730": "100"},
+                {"date": "2026-04-01", "EXPGSC1_20260730": "110"},
+            ]}
+            with (mock.patch.object(FM, "_api_key", return_value="test"),
+                  mock.patch.object(FM, "_get", return_value=json.dumps(response).encode())):
+                growth = FM.update_vintage("EXPGSC1", root=folder, units="pca")
+            self.assertAlmostEqual(growth.loc[date, "value"], 46.41)
+            self.assertEqual(growth.loc[date, "available"], release)
 
 
 class LoaderTests(unittest.TestCase):

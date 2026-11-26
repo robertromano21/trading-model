@@ -23,7 +23,8 @@
       <button type="button" class="ap-toggle">…</button>
       <select class="ap-task" aria-label="Run a paper task now">
         <option value="">Run now…</option><option value="swing">Swing paper run</option>
-        <option value="daytrade_watch">Day-trader watch (intraday)</option><option value="daytrade_close">Day-trader close run</option>
+        <option value="daytrade_watch">Stock intraday watch</option><option value="daytrade_close">Day-trader close run</option>
+        <option value="crypto_intraday">Crypto intraday run</option>
         <option value="feed">Refresh decision log</option>
       </select>
       <span class="ap-detail muted"></span>
@@ -112,9 +113,10 @@
       q(".ap-toggle").disabled = s.forcedOff;
       q(".ap-toggle").dataset.enabled = String(s.enabled);
       const last = Object.values(s.last ?? {}).sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)))[0];
-      q(".ap-detail").textContent = [s.running ? `running: ${s.running.name}…` : "",
+      const active = s.active ?? (s.running ? [s.running] : []);
+      q(".ap-detail").textContent = [active.length ? `Running ${active.map((task) => task.name).join(", ")}` : "",
         last ? `last: ${last.name} ${last.ok ? "ok" : "FAILED"} at ${new Date(last.finishedAt || last.startedAt).toLocaleString("en-US", { timeZone: "America/New_York" })} ET${last.summary ? ` — ${last.summary}` : ""}` : "no runs yet",
-        `schedule: swing ${s.schedule.swing}, day-trader watch ${s.schedule.daytradeWatch}, close run ${s.schedule.daytradeClose}`].filter(Boolean).join(" · ");
+        `Swing ${s.schedule.swing}, stock watch ${s.schedule.daytradeWatch}, close run ${s.schedule.daytradeClose}, crypto intraday ${s.schedule.cryptoIntraday ?? "pending startup"}`].filter(Boolean).join(" · ");
     } catch (error) {
       q(".ap-state").textContent = `Autopilot unavailable: ${error.message}`;
     }

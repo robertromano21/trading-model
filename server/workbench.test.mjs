@@ -155,10 +155,42 @@ test("autopilot runs only paper scripts, feeds the chat log, and a failing memor
   assert.equal(record.ok, true);
   const scripts = calls.map((c) => c.args[2]);
   assert.deepEqual(scripts, ["dilution.py", "analyst_scoring.py", "paper_trader.py", "decision_feed.py", "drift_monitor.py", "swarm.py", "crypto_paper.py",
-    "macro_service.py", "black_swan.py", "options_data.py", "options_paper.py"]);
+    "dollar_study.py", "macro_service.py", "black_swan.py", "options_data.py", "options_paper.py"]);
   assert.equal(record.memory.status, "ok");
   assert.equal(record.memory.failed, 1);
-  for (const task of Object.values(TASKS)) for (const [script] of task.steps) assert.ok(["analyst_scoring.py", "paper_trader.py", "daytrader.py", "schwab_daily.py"].includes(script));
+  for (const task of Object.values(TASKS)) for (const [script] of task.steps) assert.ok(["analyst_scoring.py", "paper_trader.py", "daytrader.py", "schwab_daily.py", "crypto_intraday.py"].includes(script));
+});
+
+test("stock and crypto watches run independently of the swing job, and crypto also ticks on weekends", async () => {
+  const root = tempRoot();
+  const calls = [];
+  let clock = T0;
+  const ap = createAutopilot({ root, dataDir: join(root, "Massive"), now: () => clock,
+    env: { TRADING_BLACKSWAN: "off" },
+    spawnImpl: fakeSpawn(calls, { out: (args) => args[2] === "daytrader.py"
+      ? '{"status":"tracking","session":"2026-11-25","targetCount":4,"freshCount":3}' : '{}' }) });
+  ap._state.running = { name: "swing" };
+  const first = ap.tick();
+  assert.deepEqual(ap.status().active.map((task) => task.name), ["swing", "daytrade_watch", "crypto_intraday"]);
+  await first;
+  assert.equal(ap.status().last.daytrade_watch.freshCount, 3);
+  await ap.tick();
+  assert.equal(calls.length, 2);
+  clock = Date.UTC(2026, 10, 28, 16, 0);
+  await ap.tick();
+  assert.deepEqual(calls.map((call) => call.args.slice(2)), [
+    ["crypto_intraday.py"], ["daytrader.py", "watch"], ["crypto_intraday.py"],
+  ]);
+});
+
+test("legacy plain-text decision verdicts remain readable alongside structured decisions", async () => {
+  const root = tempRoot();
+  const ap = createAutopilot({ root, dataDir: join(root, "Massive") });
+  const entry = { at: new Date(T0).toISOString(), role: "trader", kind: "fill", text: "Paper decision" };
+  await ap.addMessage({ ...entry, verdict: "SHOCK" });
+  await ap.addMessage({ ...entry, verdict: { flag: "YELLOW" } });
+  const { messages } = await ap.listChat({});
+  assert.deepEqual(messages.map((m) => m.verdict), ["SHOCK", { flag: "YELLOW" }]);
 });
 
 test("options paper steps never fail the swing run and TRADING_OPTIONS_PAPER=off skips them", async () => {

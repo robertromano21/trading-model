@@ -111,7 +111,8 @@ export const ROUTE_ACTIONS = Object.freeze({
   MACRO_CONSENSUS: { route: "POST /api/macro/consensus", kind: "write", label: "Enter a consensus forecast for a release", args: { eventId: x("Event id", { req: true }), field: x("Field"), period: x("Period"), value: n(-1e9, 1e9, "Consensus value", { req: true }) }, example: "set the CPI consensus to 0.3" },
   MACRO_REFRESH: { route: "POST /api/macro/refresh", kind: "write", label: "Rebuild the macro calendar", args: {}, example: "refresh the macro calendar" },
   NOWCAST: { route: "GET /api/macro/nowcast", kind: "read", label: "Our macro nowcasts", args: {}, example: "what's our CPI nowcast?" },
-  NOWCAST_HISTORY: { route: "GET /api/macro/nowcast/history", kind: "read", label: "Nowcast evolution for one target", args: { target: e(["CPI_MOM", "CORE_CPI_MOM", "CORE_PCE_MOM", "UNRATE", "PAYROLLS", "GDP_SAAR"], "Target", { req: true }) }, example: "how has the payrolls nowcast moved?" },
+  DOLLAR_STUDY: { route: "GET /api/research/dollar-study", kind: "read", label: "Dollar growth, commodity and stock relationships, and trade forecasts", args: {}, example: "does export growth predict the dollar?" },
+  NOWCAST_HISTORY: { route: "GET /api/macro/nowcast/history", kind: "read", label: "Nowcast evolution for one target", args: { target: e(["CPI_MOM", "CORE_CPI_MOM", "CORE_PCE_MOM", "UNRATE", "PAYROLLS", "GDP_SAAR", "IMPORTS_SAAR", "EXPORTS_SAAR"], "Target", { req: true }) }, example: "how has the real exports nowcast moved?" },
   NOWCAST_REFRESH: { route: "POST /api/macro/nowcast/refresh", kind: "write", label: "Refresh FRED data and the nowcasts", args: { force: b("Force") }, example: "refresh the nowcasts" },
   BLACK_SWAN_STATE: { route: "GET /api/black-swan", kind: "read", label: "Black swan monitor", args: {}, example: "any black swan risk right now?" },
   // ---- options analytics

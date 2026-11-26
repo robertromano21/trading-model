@@ -10,8 +10,8 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = (x, d = 2) => (x == null || Number.isNaN(Number(x)) ? "—" : Number(x).toFixed(d));
 const sign = (x, d = 2) => (x == null ? "—" : (x > 0 ? "+" : "") + Number(x).toFixed(d));
-const DIGITS = { PAYROLLS: 0, GDP_SAAR: 2, UNRATE: 2 };
-const UNITS = { PAYROLLS: "k jobs", GDP_SAAR: "% SAAR", UNRATE: "%" };
+const DIGITS = { PAYROLLS: 0, GDP_SAAR: 2, IMPORTS_SAAR: 2, EXPORTS_SAAR: 2, UNRATE: 2 };
+const UNITS = { PAYROLLS: "k jobs", GDP_SAAR: "% SAAR", IMPORTS_SAAR: "% SAAR", EXPORTS_SAAR: "% SAAR", UNRATE: "%" };
 
 async function getJson(url, opts) {
   const r = await fetch(url, { cache: "no-store", ...opts });

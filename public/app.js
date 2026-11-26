@@ -8,7 +8,7 @@ const marketSection = byId("prices");
 const historySection = byId("history");
 const modelSection = byId("model");
 const adxSummarySection = byId("adx-summary");
-const papertradeSection = byId("papertrade");
+const papertradeSection = byId("adx-positions");
 const backtestSection = byId("backtest");
 const logSection = byId("logs");
 const connection = byId("connection");
@@ -344,18 +344,24 @@ byId("export-logs").addEventListener("click", () => {
 });
 
 function showSection() {
-  const current = ["#history", "#logs", "#model", "#backtest", "#adx-summary", "#papertrade"].includes(location.hash) ? location.hash.slice(1) : "prices";
-  for (const section of [marketSection, historySection, adxSummarySection, papertradeSection, modelSection, backtestSection, logSection]) {
-    section.hidden = section.id !== current;
-    const tab = byId(`${section.id}-tab`);
-    if (section.hidden) tab.removeAttribute("aria-current");
-    else tab.setAttribute("aria-current", "page");
+  if (location.hash === "#papertrade") {
+    location.replace("/paper2.html");
+    return;
   }
-  if (current === "logs") void refreshLogs();
-  if (current === "history") void refreshHistory();
-  if (current === "adx-summary") void openAdxSummary();
-  if (current === "papertrade") void papertrade.refresh();
-  if (current === "backtest") void openBacktester();
+  const sections = [marketSection, historySection, adxSummarySection, papertradeSection, modelSection, backtestSection, logSection];
+  const current = sections.find((section) => `#${section.id}` === location.hash) || marketSection;
+  const activeTab = current === papertradeSection ? adxSummarySection : current;
+  for (const section of sections) {
+    section.hidden = section !== current;
+    const tab = byId(`${section.id}-tab`);
+    if (section === activeTab) tab?.setAttribute("aria-current", "page");
+    else tab?.removeAttribute("aria-current");
+  }
+  if (current === logSection) void refreshLogs();
+  if (current === historySection) void refreshHistory();
+  if (current === adxSummarySection) void openAdxSummary();
+  if (current === papertradeSection) void papertrade.refresh();
+  if (current === backtestSection) void openBacktester();
 }
 
 const openBacktester = createBacktester(api);

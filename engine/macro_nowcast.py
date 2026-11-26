@@ -10,7 +10,7 @@ configured, else a conservative publication lag; see fred_macro). A nowcast made
 observations with available <= s, and the walk-forward only trains on periods whose official print was out
 by the refit date. Targets are first releases where ALFRED has them.
 
-Targets: CPI m/m, core CPI m/m, core PCE m/m, unemployment rate, payroll change, real GDP q/q SAAR.
+Targets: CPI, core CPI, core PCE, unemployment, payrolls, real GDP, and real imports and exports.
 
 Usage (from engine/):
   python macro_nowcast.py publish        # refresh nowcast_latest.json + history (fast; daily / dashboard)
@@ -54,7 +54,7 @@ LEDGER_PATH = DATA_DIR / "Research" / "swarm" / "holdout_ledger.json"
 # Raw inputs only. Nothing here is anyone's forecast.
 FEATURE_SERIES = frozenset({
     "CPIAUCSL", "CPILFESL", "PCEPILFE", "PPIACO", "DCOILWTICO", "GASREGW", "T5YIE", "DOLLAR_MAJOR_LONG",
-    "UNRATE", "PAYEMS", "ICSA", "CCSA", "SAHMREALTIME", "NFCI", "WEI", "INDPRO", "GDPC1", "T10Y3M",
+    "UNRATE", "PAYEMS", "ICSA", "CCSA", "SAHMREALTIME", "NFCI", "WEI", "INDPRO", "GDPC1", "T10Y3M", "DTWEXBGS",
     # first-release growth rates computed inside each ALFRED vintage (fred_macro.VINTAGE_TRANSFORMS)
     "CPIAUCSL:pch", "CPILFESL:pch", "PCEPILFE:pch", "PPIACO:pch", "PAYEMS:chg", "GDPC1:pca", "INDPRO:pch",
 })
@@ -96,6 +96,12 @@ TARGETS = {
                  "core": ["pay1", "pay3", "icsa", "ccsa", "nfci"], "full": ["wei"]},
     "GDP_SAAR": {"sid": "GDPC1", "src": "GDPC1:pca", "freq": "Q", "kind": "saar", "label": "Real GDP q/q SAAR %", "calendar": "gdp",
                  "core": ["gdp1", "ip", "payq", "icsaq", "nfciq", "curve"], "full": ["wei"]},
+    "IMPORTS_SAAR": {"sid": "IMPGSC1", "src": "IMPGSC1:pca", "freq": "Q", "kind": "saar",
+                     "label": "Real imports q/q SAAR %", "calendar": "gdp",
+                     "core": ["trade1", "gdp1", "ip", "dollarYoY"], "full": ["dollarQ", "nfciq"]},
+    "EXPORTS_SAAR": {"sid": "EXPGSC1", "src": "EXPGSC1:pca", "freq": "Q", "kind": "saar",
+                     "label": "Real exports q/q SAAR %", "calendar": "gdp",
+                     "core": ["trade1", "gdp1", "ip", "dollarYoY"], "full": ["dollarQ", "nfciq"]},
 }
 
 FEATURE_LABELS = {
@@ -110,6 +116,8 @@ FEATURE_LABELS = {
     "icsa": "initial claims month-to-date vs last month", "ccsa": "continuing claims vs last month",
     "wei": "NY Fed Weekly Economic Index (raw data index)", "gdp1": "last GDP print", "ip": "industrial production q-to-date",
     "payq": "payrolls q-to-date", "icsaq": "claims q-to-date", "nfciq": "NFCI q-to-date", "curve": "10y-3m curve",
+    "trade1": "last real trade growth print", "dollarYoY": "broad dollar year-over-year change",
+    "dollarQ": "broad dollar quarter-to-date change",
 }
 
 
@@ -273,6 +281,18 @@ def features(D, tname, p, s):
         f["nfciq"] = _mtd_or_last(D, "NFCI", ps, pe, s)
         f["curve"] = D.latest("T10Y3M", s)[0]
         f["wei"] = _mtd_or_last(D, "WEI", ps, pe, s) if D.has("WEI") else np.nan
+    elif tname in ("IMPORTS_SAAR", "EXPORTS_SAAR"):
+        f["trade1"] = D.latest(t["src"], s)[0]
+        f["gdp1"] = D.latest("GDPC1:pca", s)[0]
+        f["ip"] = _mtd_or_last(D, "INDPRO:pch", ps, pe, s) * 12
+        current = _mtd_or_last(D, "DTWEXBGS", ps, pe, s)
+        last_year = pd.DateOffset(years=1)
+        # Compare like portions of the current and year-ago quarters at the nowcast date.
+        year_ago = D.window_mean("DTWEXBGS", ps - last_year, min(s, pe) - last_year, s)
+        prior = D.window_mean("DTWEXBGS", qs, qe, s)
+        f["dollarYoY"] = 100 * (current / year_ago - 1.0) if year_ago > 0 else np.nan
+        f["dollarQ"] = 100 * (current / prior - 1.0) if prior > 0 else np.nan
+        f["nfciq"] = _mtd_or_last(D, "NFCI", ps, pe, s)
     return f
 
 
@@ -317,7 +337,8 @@ def _naive(tname, row):
     t = TARGETS[tname]
     if t["kind"] == "level":
         return row.get("_last", np.nan)
-    key = {"CPI_MOM": "lastH", "CORE_CPI_MOM": "core1", "CORE_PCE_MOM": "pce1", "PAYROLLS": "pay1", "GDP_SAAR": "gdp1"}[tname]
+    key = {"CPI_MOM": "lastH", "CORE_CPI_MOM": "core1", "CORE_PCE_MOM": "pce1", "PAYROLLS": "pay1",
+           "GDP_SAAR": "gdp1", "IMPORTS_SAAR": "trade1", "EXPORTS_SAAR": "trade1"}[tname]
     return row.get(key, np.nan)
 
 

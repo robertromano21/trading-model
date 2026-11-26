@@ -122,7 +122,7 @@ export function createPapertrade(api) {
       await loadTrades();
       const missing = requested.length - positions.length;
       adxStatus.textContent = requested.length === 1 && !missing
-        ? `Tracking ${requested[0].ticker} for ${entryDate} in Papertrade.`
+        ? `Tracking ${requested[0].ticker} for ${entryDate} in ADX test positions.`
         : `Added ${number.format(added)} paper trades for ${entryDate}.` +
           (missing ? ` ${number.format(missing)} skipped due to missing entry prices.` : "");
     } catch (error) {

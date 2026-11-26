@@ -53,6 +53,8 @@
       <aside class="side">
         <section class="box"><h2>Indicators (engine definitions)</h2><table id="ind"></table></section>
         <section class="box"><h2>AI verdict</h2><div id="verdict" class="muted">Loading…</div>
+          <p id="verdict-status" class="small muted" role="status" hidden></p>
+          <button type="button" id="verdict-refresh" hidden>Generate AI verdict</button>
           <form id="ask-form" class="ask"><input id="ask" placeholder="Ask the AI about this ticker…" autocomplete="off"><button type="submit">Ask</button></form>
           <div id="answer" class="answer"></div>
         </section>

@@ -114,6 +114,7 @@ export function cleanPrefs(raw) {
   const bool = (k) => { if (typeof raw[k] === "boolean") out[k] = raw[k]; };
   ["masterMute", "popups", "spoken", "quietHoursEnabled"].forEach(bool);
   if (["speech", "off"].includes(raw.voiceMode)) out.voiceMode = raw.voiceMode;
+  if (["verbose", "light"].includes(raw.analystNarration)) out.analystNarration = raw.analystNarration;
   if (["sid", "browser"].includes(raw.engine)) out.engine = raw.engine;
   if (["male", "female"].includes(raw.gender)) out.gender = raw.gender;
   if (["1x", "2x", "4x"].includes(raw.clock)) out.clock = raw.clock;

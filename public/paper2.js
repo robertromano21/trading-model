@@ -128,6 +128,26 @@ async function loadResearch() {
 
 const hhmm = (m) => (m === null || m === undefined ? "" : `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`);
 
+async function loadStockWatch() {
+  const note = $("dt-watch");
+  try {
+    const status = await getJson("/api/autopilot");
+    const watch = status.last?.daytrade_watch;
+    const active = status.active?.some((task) => task.name === "daytrade_watch");
+    const rows = watch?.session === status.market?.date ? watch.swingTargets ?? [] : [];
+    const latest = watch?.finishedAt ? `Last check ${new Date(watch.finishedAt).toLocaleString()}. ${watch.summary || ""}` : "";
+    const mode = !status.enabled ? "Autopilot is off." : active ? "Checking stock targets now." :
+      "Stock targets are checked during NYSE sessions.";
+    note.textContent = [mode, latest].filter(Boolean).join(" ");
+    $("dt-swing-watch").hidden = !rows.length;
+    table($("dt-swing-targets"), [["Account", (r) => r.account], ["Ticker", (r) => r.ticker], ["Decision", (r) => r.signal],
+      ["Target", (r) => r.target_weight == null ? "" : pct(r.target_weight)], ["Latest bar", (r) => money(r.price)],
+      ["Stop", (r) => money(r.stop)]], rows);
+  } catch (error) {
+    note.textContent = `Stock watch unavailable (${error.message}).`;
+  }
+}
+
 async function loadDayTrading() {
   try {
     const status = await getJson(`/api/daytrade/status${$("dry").checked ? "?dry=1" : ""}`);
@@ -161,7 +181,9 @@ async function loadDayTrading() {
 
 $("dry").addEventListener("change", loadDayTrading);
 loadDayTrading();
+loadStockWatch();
 $("dry").addEventListener("change", loadStatus);
 loadStatus();
 loadResearch();
 setInterval(loadStatus, 60_000);
+setInterval(loadStockWatch, 60_000);

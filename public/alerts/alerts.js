@@ -39,6 +39,7 @@
     gender: "female",
     voiceMode: "speech",   // legacy; masterMute is the switch shown in the panel
     masterMute: false,     // voice ON by default
+    analystNarration: "verbose",
     engine: "sid",         // "sid" (SID chip voice) or "browser" (speechSynthesis)
     volume: 0.85,
     rate: 1,
@@ -60,6 +61,7 @@
     s.rate = Math.max(0.7, Math.min(1.4, Number(s.rate) || 1));
     if (!["male", "female"].includes(s.gender)) s.gender = "female";
     if (!["speech", "off"].includes(s.voiceMode)) s.voiceMode = "speech";
+    if (!["verbose", "light"].includes(s.analystNarration)) s.analystNarration = "verbose";
     if (!["sid", "browser"].includes(s.engine)) s.engine = "sid";
     if (!["1x", "2x", "4x"].includes(s.clock)) s.clock = "2x";
     s.masterMute = s.masterMute === true;
@@ -495,6 +497,21 @@
     return String(text || "").replace(/\s+/g, " ").trim().split(/(?<=[.!?]['\u2019)\]]*)\s+(?=\S)/).map((s) => s.trim()).filter(Boolean);
   }
 
+  function captionChunks(text) {
+    const max = 200;
+    const chunks = [];
+    for (let sentence of sentenceSplit(text)) {
+      while (sentence.length > max) {
+        const end = sentence.lastIndexOf(" ", max);
+        const split = end > 0 ? end : max;
+        chunks.push(sentence.slice(0, split));
+        sentence = sentence.slice(split).trimStart();
+      }
+      if (sentence) chunks.push(sentence);
+    }
+    return chunks;
+  }
+
   function fetchScore(text) {
     const key = settings.clock + "|" + settings.gender + "|" + settings.rate + "|" + text;
     if (prefetchCache.has(key)) return prefetchCache.get(key);
@@ -596,23 +613,27 @@
       g.gain.value = settings.volume;
       g.connect(ctx.destination);
       let end = ctx.currentTime + 0.03;
+      let stopped = false;
       const play = async (score) => {
         const player = await root.TradingSidPlayer.open(score.bytes, {
           context: ctx, destination: g, source: workerSourceText, loop: false,
         });
         player.volume = Math.min(1, settings.volume);
         end = Math.max(end, ctx.currentTime + 0.03);
-        await player.play(end);
-        end += player.duration;
-        await new Promise((resolve) => {
-          player.onended = resolve;
-          setTimeout(resolve, (score.duration + 0.4) * 1000);
+        if (alert.__narrate && !shouldSpeak(alert, new Date())) { player.dispose(); return; }
+        let finish;
+        const done = new Promise((resolve) => {
+          const timer = setTimeout(resolve, (score.duration + 0.4) * 1000);
+          finish = () => { clearTimeout(timer); resolve(); };
+          player.onended = finish;
         });
-        try { player.dispose(); } catch {}
+        currentStop = () => { stopped = true; try { player.stop(); } finally { finish(); } };
+        try { await player.play(end); end += player.duration; await done; }
+        finally { finish(); currentStop = null; try { player.dispose(); } catch {} }
       };
       reveal();
       await play(first);
-      for (let i = 1; i < scores.length; i++) {
+      for (let i = 1; i < scores.length && !stopped; i++) {
         const score = await scores[i];
         end = Math.max(end + 0.12, ctx.currentTime + 0.03);
         await play(score);
@@ -635,7 +656,17 @@
     }
   }
 
-  const queue = createQueue(speakSid, 20);
+  async function speakAlert(alert, card) {
+    if (!alert.__narrate) return speakSid(alert, card);
+    const parts = captionChunks(alert.speech || alert.text);
+    for (let index = 0; index < parts.length; index++) {
+      if (!shouldSpeak(alert, new Date())) return;
+      if (index + 1 < parts.length && !audioLocked() && settings.engine === "sid") prefetch(parts[index + 1]);
+      await speakSid({ ...alert, speech: parts[index] }, index === 0 ? card : null);
+    }
+  }
+
+  const queue = createQueue(speakAlert, 20);
   const seen = new Set(readList(sessionStorageSafe(), SEEN_KEY));
   let unread = 0;
 
@@ -686,7 +717,7 @@
       if (doSpeak) {
         if (force) alert.__force = true;
         if (opts && opts.speaker) alert.__speaker = opts.speaker;
-        if (!audioLocked() && settings.engine === "sid") prefetch(alert.speech || alert.text);
+        if (!alert.__narrate && !audioLocked() && settings.engine === "sid") prefetch(alert.speech || alert.text);
         queue.enqueue(alert, { speak: true, card }).then(() => { if (card) setTimeout(() => dismiss(card), 8000); });
       } else if (pop && card) {
         revealCard(card, alert.speech || alert.text);
@@ -741,6 +772,7 @@
         ts: new Date().toISOString(),
         type: opts.type || "analyst", category: opts.category || "analyst", severity: opts.severity || "info",
         title: opts.title || "AI analyst", text: opts.text || text, speech: text, meta: { category: opts.category || "analyst" },
+        __narrate: opts.narrate === true,
       };
       ingest(alert, { local: true, noPop: opts.pop === false, speaker: opts.speaker });
       return alert.id;
@@ -748,6 +780,7 @@
     openSettings() { unlockAudio(); togglePanel(true); },
     toggleSettings() { unlockAudio(); togglePanel(); },
     setMasterMute(muted) { settings.masterMute = !!muted; if (!muted) settings.voiceMode = "speech"; if (muted) stopSpeaking(); saveSettings(); renderPanel(); },
+    setAnalystNarration(mode) { if (mode === "verbose" || mode === "light") { settings.analystNarration = mode; saveSettings(); } },
     voiceOn,
     audioLocked,
     stop: stopSpeaking,

@@ -13,6 +13,9 @@ import { buildContext, researchFallbackText } from "./context.js";
 import { computeFeatures, diversification, loadHmmRegime, marketRegime, paperBook } from "./features.js";
 import { converse } from "./runtime.js";
 import { annotateFinancials, applyDilutionToVerdict } from "./dilution.js";
+import { KINDS } from "./memory/memory.js";
+
+const SESSION_MEMORY_KINDS = KINDS.filter((kind) => kind !== "QA");
 
 const DEFAULT_TARGETS = ["SPY", "QQQ", "NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "AVGO", "AMD"];
 const r2 = (x) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 100) / 100);
@@ -180,10 +183,10 @@ export function createAdvisor({ dataDir, models, store, sources, prices, memory 
         text: `SEC snapshot for quarter ended ${d.lastQuarterEnd}: TTM revenue ${b(d.revenueTTM)} (growth ${p(d.revenueGrowthTTM)}, last quarter YoY ${p(d.revenueGrowthLastQuarterYoY)}), operating margin ${p(d.operatingMarginTTM)}, FCF ${b(d.fcfTTM)} (${p(d.fcfMarginTTM)}), net debt ${b(d.netDebt)}, interest coverage ${d.interestCoverage == null ? "n/a" : d.interestCoverage.toFixed(1) + "x"}, diluted shares YoY ${p(d.dilutedShareChangeYoY)}.` });
     }
   }
-  async function recallFor(query, list, kinds = null) {
+  async function recallFor(query, list, kinds = null, keepRecent) {
     if (!memory) return "";
     const prices = Object.fromEntries(list.filter((r) => r.features?.price).map((r) => [r.ticker, r.features.price]));
-    const m = await memory.recall({ query, tickers: list.map((r) => r.ticker), kinds, prices });
+    const m = await memory.recall({ query, tickers: list.map((r) => r.ticker), kinds, keepRecent, prices });
     return m.text;
   }
 
@@ -432,15 +435,16 @@ export function createAdvisor({ dataDir, models, store, sources, prices, memory 
       `${r.purpose ? ` — ${r.purpose}` : ""}\n${r.ok ? "OK" : "FAILED"} (${r.ms} ms${r.cached ? ", cached" : ""}): ${r.summary}`).join("\n\n");
   }
 
-  async function ask(question, tickers, { modelId, refresh = false, useTools = true } = {}) {
+  async function ask(question, tickers, { modelId, refresh = false, useTools = true, conversation } = {}) {
     const names = (tickers || []).map((t) => String(t).toUpperCase()).filter(Boolean).slice(0, 4);
     const list = names.length ? await Promise.all(names.map((t) => research(t, { refresh }))) : [];
     let context = buildContext(list, { regime: regime(), book: list[0]?.book || paperBook(dataDir), dataDir, question });
     const prior = names.length ? store.latestVerdicts(names).filter((v) => v.source === "LLM")
       .map((v) => `[PRIOR_VERDICT] ${v.ticker} ${v.createdAt}: ${v.flag}/${v.conviction}, action ${v.action}, band ${v.entryLow}-${v.entryHigh}, stop ${v.stop}. ${v.summary}`) : [];
     if (prior.length) context += "\n\n" + prior.join("\n");
-    const memoryText = await recallFor(question, list);
+    const memoryText = await (conversation === undefined ? recallFor(question, list) : recallFor(question, list, SESSION_MEMORY_KINDS, 0));
     if (memoryText) context += "\n\n" + memoryText;
+    if (conversation) context += "\n\n" + conversation;
     const sys = await system();
     const { runs, steps } = useTools ? await toolLoop({ sys, context, question, modelId }) : { runs: [], steps: [] };
     const toolSummary = runs.map((r) => ({ tool: r.tool, method: r.method, family: r.family, args: r.args, ok: r.ok, ms: r.ms, cached: r.cached,

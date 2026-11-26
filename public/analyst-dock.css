@@ -54,9 +54,12 @@
   padding: 6px 8px; border-bottom: 1px solid #333; background: #0b0b0b;
 }
 #tm-console .tmc-layout { display: flex; flex: 1 1 100%; align-items: center; gap: 4px; min-width: 0; }
+#tm-console .tmc-chats { display: flex; flex: 1 1 100%; gap: 4px; min-width: 0; }
+#tm-console .tmc-chat-select { flex: 1; min-width: 0; text-overflow: ellipsis; color-scheme: dark; }
+#tm-console .tmc-chat-warning { margin: 0; font-size: 10px; color: #ffb3ad; }
 #tm-console .tmc-filters { order: 3; flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 3px; }
 #tm-console .tmc-tools { display: flex; flex-wrap: wrap; gap: 3px; }
-#tm-console .tmc-head button, #tm-console .tmc-zoom {
+#tm-console .tmc-head :is(button, select) {
   font-size: 10px; line-height: 1.4; padding: 3px 5px; border-radius: 0;
   background: #161616; color: #ddd; border: 1px solid #555;
 }

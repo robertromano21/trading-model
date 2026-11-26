@@ -138,6 +138,17 @@ test("prefs are whitelisted", () => {
   assert.deepEqual(c, { masterMute: true, volume: 1.5, engine: "browser", speakCats: { analyst: false }, quietStart: "22:00" });
   assert.equal(cleanPrefs(null), null);
   assert.equal(cleanPrefs([1]), null);
+  assert.equal(cleanPrefs({ analystNarration: "light" }).analystNarration, "light");
+  assert.equal(cleanPrefs({ analystNarration: "invalid" }).analystNarration, undefined);
+});
+
+test("Verbose narration reads the explanation through the end and Light stays short", () => {
+  const prose = "The reported result is a paper simulation. ".repeat(12) + "The last point is that the window is short.";
+  const reply = { kind: "action", explanation: prose, answer: "Raw data", table: { columns: ["Raw data"], rows: [[1]] } };
+  assert.match(VS.narrateReply(reply), /The last point is that the window is short\.$/);
+  assert.doesNotMatch(VS.narrateReply(reply), /Raw data/);
+  assert.ok(VS.narrateReply(reply, "light").length <= VS.MAX);
+  assert.doesNotMatch(VS.narrateReply(reply, "light"), /last point/);
 });
 
 test("analyst replies become short spoken summaries, not tables or long text", () => {

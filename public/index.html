@@ -24,10 +24,8 @@
       <a href="#prices" id="prices-tab" aria-current="page">Market data</a>
       <a href="#history" id="history-tab">History</a>
       <a href="#adx-summary" id="adx-summary-tab">ADX Summary</a>
-      <a href="#papertrade" id="papertrade-tab">Papertrade</a>
       <a href="#model" id="model-tab">Model</a>
       <a href="#backtest" id="backtest-tab">Backtester</a>
-      <a href="#logs" id="logs-tab">Logs</a>
     </nav>
 
     <section id="prices" aria-labelledby="prices-title">
@@ -174,6 +172,7 @@
       <div class="page-heading">
         <h1 id="adx-summary-title">ADX Summary</h1>
         <p>The workbook’s ADX and 50-day moving-average rules for every ticker in a saved market session.</p>
+        <p><a href="#adx-positions">View ADX test positions</a></p>
       </div>
       <section class="card" aria-label="ADX market summary">
         <div class="filters adx-filters">
@@ -283,9 +282,10 @@
       </section>
     </section>
 
-    <section id="papertrade" aria-labelledby="papertrade-title" hidden>
+    <section id="adx-positions" aria-labelledby="papertrade-title" hidden>
       <div class="page-heading">
-        <h1 id="papertrade-title">Papertrade</h1>
+        <h1 id="papertrade-title">ADX test positions</h1>
+        <p><a href="#adx-summary">Back to ADX Summary</a></p>
         <p>Simulated $10 positions enter at the selected market close and exit at the close seven NYSE trading sessions later.</p>
       </div>
       <section class="card" aria-label="Paper trades">
@@ -531,7 +531,8 @@
 
     <section id="logs" aria-labelledby="logs-title" hidden>
       <div class="page-heading">
-        <h1 id="logs-title">Logs</h1>
+        <h1 id="logs-title">Browser console history</h1>
+        <p><a href="/ops.html#logs">Back to Logs</a></p>
         <p id="log-summary">The latest 5,000 dashboard console messages are kept in this browser.</p>
       </div>
       <section class="card log-card" aria-label="Saved log entries">

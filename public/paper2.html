@@ -86,8 +86,11 @@
       <div id="swarm-panel" class="muted">Loading…</div>
     </section>
     <section id="crypto">
-      <h2>Crypto: 24 simulated $10k accounts</h2>
-      <p class="muted">Crypto-only PAPER shadow accounts (ids 200-219, plus SHADOW SBIT short experiments 220-223; no orders, ever). Coinbase daily closes, Schwab Crypto fees (0.75% per side), long-only spot. Backtest ranked on pre-holdout data only.</p>
+      <h2>Crypto paper trading</h2>
+      <h3>BTC and ETH intraday</h3>
+      <div id="crypto-intraday" class="muted">Loading…</div>
+      <h3>Daily strategies and SBIT experiments</h3>
+      <p class="muted">Simulated $10,000 accounts. Daily spot strategies use Coinbase closes. SBIT experiments follow US market hours.</p>
       <div id="crypto-panel" class="muted">Loading…</div>
     </section>
     <section id="decision-chat"></section>
@@ -101,6 +104,9 @@
     <section><h2>Runs</h2><table id="runs"></table></section>
     <section><h2>Day trading (ORB, flat by close, $10k, PDT-limited)</h2>
       <section class="cards" id="dt-cards"></section>
+      <p id="dt-watch" class="muted">Loading the stock intraday watch…</p>
+      <details id="dt-swing-watch" hidden><summary>Swing targets and stop checks</summary>
+        <table id="dt-swing-targets"></table></details>
       <h3>Daily log (P&amp;L, PDT / breaker skips)</h3><table id="dt-daily"></table>
       <h3>Recent day trades</h3><table id="dt-trades"></table>
       <h3>Latest Schwab quotes (cached)</h3><table id="dt-quotes"></table>

@@ -455,16 +455,46 @@ async function loadCrypto() {
   }
 }
 
+let verdictModel = null, verdictRunning = false;
+
+function verdictMessage(message) {
+  $("verdict-status").textContent = message;
+  $("verdict-status").hidden = !message;
+}
+
+function updateVerdictControls() {
+  $("verdict-refresh").hidden = !verdictModel?.ready;
+  $("verdict-refresh").disabled = verdictRunning;
+  $("ai-flag").disabled = verdictRunning || verdictModel?.ready === false;
+}
+
 async function loadVerdict() {
+  let storedFallback = false;
   try {
-    const { verdicts } = await getJson(`/api/ai/verdicts?tickers=${encodeURIComponent(symbol)}`);
-    verdict = verdicts?.[0] ?? null;
+    const [{ verdicts, modelVerdicts }, models] = await Promise.all([
+      getJson(`/api/ai/verdicts?tickers=${encodeURIComponent(symbol)}&includeModel=1`),
+      getJson("/api/ai/models").catch(() => null),
+    ]);
+    verdictModel = models?.current ?? null;
+    const latest = verdicts?.[0] ?? null;
+    verdict = latest?.source === "FALLBACK" ? modelVerdicts?.[0] ?? latest : latest;
+    storedFallback = latest?.source === "FALLBACK" && verdict?.source === "LLM";
   } catch (error) {
-    $("verdict").textContent = `AI layer unavailable: ${error.message}`;
+    if (!verdict) $("verdict").textContent = "No saved AI verdict was loaded.";
+    verdictMessage(`AI verdict unavailable: ${error.message}`);
     return;
   }
-  if (!verdict) { $("verdict").textContent = "No AI verdict yet. Click “AI flag” to create one."; return; }
+  updateVerdictControls();
+  $("verdict-refresh").textContent = verdict?.source === "LLM" ? "Refresh AI verdict" : "Generate AI verdict";
+  const needsKey = verdict?.source === "FALLBACK" && /MODEL_NO_KEY/.test(verdict.summary || "");
+  if (storedFallback) verdictMessage("Showing the most recent model verdict. The later attempt produced a fallback.");
+  else if (needsKey && verdictModel?.ready) verdictMessage(`${verdictModel.name} is ready. Generate a new verdict to replace this saved fallback.`);
+  else if (verdict?.source === "FALLBACK" && verdictModel?.ready) verdictMessage(`${verdictModel.name} is ready. You can retry the verdict.`);
+  else if (verdictModel?.ready === false) verdictMessage("Set up a model on the AI analyst page to generate a verdict.");
+  else verdictMessage("");
+  if (!verdict) { $("verdict").textContent = "No saved AI verdict for this ticker."; if (data) render(); return; }
   const v = verdict, e = v.entry ?? {};
+  const summary = needsKey && verdictModel?.ready ? "This fallback was saved when the model had no active API key." : v.summary;
   $("verdict").classList.remove("muted");
   $("verdict").innerHTML = `<span class="flag ${esc(v.flag)}">${esc(v.flag)}</span> ${esc(v.action ?? "")} · conviction ${esc(v.conviction ?? "?")}
     <dl class="kv">
@@ -473,27 +503,31 @@ async function loadVerdict() {
       <dt>Target</dt><dd>${fmt(v.takeProfit?.price)}</dd>
       <dt>Overextension</dt><dd>${esc(v.overextension ?? "–")}</dd>
       <dt>Trend</dt><dd>${esc(v.trend ?? "–")}</dd><dt>Size hint</dt><dd>${esc(v.sizeHint ?? "–")}</dd>
-      <dt>Fundamentals</dt><dd>${esc(v.fundamentalHealth ?? "–")}</dd><dt>Source</dt><dd>${esc(v.source ?? v.model ?? "–")} · ${esc(v.asof ?? v.createdAt ?? "")}</dd>
-    </dl><p class="small">${esc(v.summary ?? "")}</p>
+      <dt>Fundamentals</dt><dd>${esc(v.fundamentalHealth ?? "–")}</dd><dt>Source</dt><dd>${esc(v.source ?? "–")}${v.model ? ` · ${esc(v.model)}` : ""} · ${esc(v.asof ?? v.createdAt ?? "")}</dd>
+    </dl><p class="small">${esc(summary ?? "")}</p>
     <p class="small muted">Advisory only: the paper trader's risk engine stays final; a verdict can only reduce or defer an entry.</p>`;
   if (data) render();
 }
 
 async function aiFlag() {
-  $("ai-flag").disabled = true;
-  $("verdict").textContent = "Flagging with the AI analyst…";
+  if (verdictRunning) return;
+  verdictRunning = true;
+  updateVerdictControls();
+  verdictMessage("Generating an AI verdict…");
   try {
     const job = await getJson("/api/ai/flag", { tickers: [symbol] });
     for (let i = 0; i < 120; i += 1) {
       await new Promise((r) => setTimeout(r, 2000));
       const j = await getJson(`/api/ai/flag/${job.id}`);
-      if (j.status !== "running") { if (j.status === "failed") throw new Error(j.error); break; }
+      if (j.status === "failed") throw new Error(j.error);
+      if (j.status === "complete") { await loadVerdict(); return; }
     }
-    await loadVerdict();
+    verdictMessage("The verdict is still running. Reload the chart to check for the result.");
   } catch (error) {
-    $("verdict").textContent = `AI flag failed: ${error.message}`;
+    verdictMessage(`AI verdict failed: ${error.message}`);
   } finally {
-    $("ai-flag").disabled = false;
+    verdictRunning = false;
+    updateVerdictControls();
   }
 }
 
@@ -505,7 +539,7 @@ async function ask(event) {
   try {
     const r = await getJson("/api/ai/ask", isCrypto ? { question: `${symbol} crypto (${data?.name || symbol}): ${question}`, tickers: [] }
       : { question, tickers: [symbol] });
-    $("answer").textContent = [r.answer ?? r.text ?? "", ...(r.keyPoints ?? []).map((k) => `• ${k}`),
+    $("answer").textContent = [r.explanation ?? r.answer ?? r.text ?? "", ...(r.keyPoints ?? []).map((k) => `• ${k}`),
       r.source === "FALLBACK" ? "\n(Fallback answer: the AI model was unavailable.)" : ""].join("\n");
   } catch (error) {
     $("answer").textContent = `AI unavailable: ${error.message}`;
@@ -571,6 +605,7 @@ if (!isCrypto) {   // crypto: paper only, no order ticket, no stock verdict
   $("buy").onclick = () => openTicket("BUY");
   $("sell").onclick = () => openTicket("SELL");
   $("ai-flag").onclick = aiFlag;
+  $("verdict-refresh").onclick = aiFlag;
 }
 $("ask-form").addEventListener("submit", ask);
 $("live").onchange = pollQuote;

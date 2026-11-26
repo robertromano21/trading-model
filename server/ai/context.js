@@ -245,6 +245,24 @@ export function dxyOutlookBlock(dataDir) {
     + (o.alert?.flag ? ` ALERT: ${o.alert.reason}.` : "");
 }
 
+export function dollarStudyBlock(dataDir) {
+  const s = readJsonSafe(join(massiveDir(dataDir), "Research", "dollar_study.json"));
+  if (!s?.dollar) return null;
+  const percent = (x) => x == null ? "n/a" : `${(100 * x).toFixed(2)}%`;
+  const corr = (x) => x == null ? "n/a" : Number(x).toFixed(2);
+  const d = s.dollar, model = s.tradeDollarOutlook;
+  const assets = s.assets?.map((a) => `${a.symbol} ${corr(a.monthCorrelation)} (last year ${corr(a.recentMonthCorrelation)})`).join(", ");
+  const trade = s.trade?.map((a) => `${a.label} ${percent(a.volumeYoY)} YoY for quarter starting ${a.quarter}`).join(", ");
+  return `[DOLLAR_GROWTH] Fed broad dollar as of ${d.asOf}, 1 month ${percent(d.month)}, 3 months ${percent(d.quarter)}, 1 year ${percent(d.year)}. `
+    + `Correlation with 21-session asset price changes since 2015: ${assets || "unavailable"}. `
+    + (trade ? `${trade}. ` : "")
+    + (model ? `63-session trade-augmented model ${percent(model.tradeMove)} vs dollar-only ${percent(model.baselineMove)}, ${model.n} walk-forward quarters. `
+      + `RMSE trade ${percent(model.rmse.trade)}, dollar-only ${percent(model.rmse.dollar)}, flat ${percent(model.rmse.flat)}. `
+      + `Both baselines beaten: ${model.beatsBaselines ? "yes" : "no"}. ` : "")
+    + (s.intraday ? `40-day UUP minute-data crypto replay: ${s.intraday.overlap} matched 15-minute bars; dollar-filter effect versus coverage-matched momentum ${percent(s.intraday.leaderboard.dollarDelta)}. ` : "")
+    + "Historical associations can differ by market and should be kept separate from forecasts.";
+}
+
 /** [MACRO_NOWCAST] our raw-data nowcasts (engine/macro_nowcast.py). Outside estimates are display-only. */
 export function nowcastBlock(dataDir, maxChars = 900) {
   const L = readJsonSafe(join(massiveDir(dataDir), "Research", "macro", "nowcast_latest.json"));
@@ -265,6 +283,7 @@ const RESEARCH_TOPICS = [
   { id: "black_swan", re: /\b(black[- ]swan|geopolit|shock|war|sanction|invasion|crisis)\b/i, load: blackSwanContextBlock },
   { id: "macro_nowcast", re: /\b(nowcast|economy|economic|recession|gdp|cpi|inflation|pce|payrolls?|jobs report|unemployment|macro)\b/i, load: nowcastBlock },
   { id: "dxy_forecast", re: /\b(dollar|dxy|currency|fx|\busd\b)\b/i, load: dxyOutlookBlock },
+  { id: "dollar_growth", re: /\b(dollar|dxy|usd|imports?|exports?|commodit\w*|gold|oil|trade balance)\b/i, load: dollarStudyBlock },
   { id: "crypto", re: /\b(crypto\w*|bitcoin|btc|ether(?:eum)?|eth|solana|altcoins?)\b/i, load: (dir) => cryptoBlock(dir) },
   { id: "swarm", re: /\b(swarm|champion|shadow account|pbo|holdout|walk-?forward)\b/i, load: (dir) => swarmBlock(join(massiveDir(dir), "Research", "swarm", "swarm_status.json")) },
 ];
@@ -287,6 +306,7 @@ export function buildContext(researchList, { budgetChars = Number(process.env.TR
   const reserved = Math.min(8000, Math.max(1200, Math.floor(budgetChars * 0.35)));
   const globals = fitBlocks([
     isCryptoQuestion(question) ? cryptoBlock(dataDir) : null,   // crypto questions: market + paper accounts first
+    dollarStudyBlock(dataDir),
     regimeBlock(regime),
     allocationBlock(dataDir),
     blackSwanContextBlock(dataDir),

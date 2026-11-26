@@ -37,6 +37,55 @@ function render(doc) {
     ${research(doc.research)}`;
 }
 
+const dateTime = (value) => value ? new Date(value).toLocaleString() : "—";
+
+function ranked(board) {
+  if (!board || board.bars < 2) return "<p>Waiting for shared trading data to rank the strategies.</p>";
+  const rows = board.rows.map((row) => `<tr><td>${esc(row.label)}</td>
+      <td class="${cls(row.return)}">${pct(row.return, 2)}</td><td>${pct(row.maxDrawdown, 2)}</td><td>${row.fills}</td></tr>`).join("");
+  const delta = board.dollarDelta == null ? "Waiting for overlapping dollar prices." :
+    `Dollar filter vs. matched momentum ${(100 * board.dollarDelta).toFixed(2)} percentage points across ${board.dollarBars} bars with dollar coverage.`;
+  return `<p>${board.bars} shared bars, ${esc(dateTime(board.start))} through ${esc(dateTime(board.end))}. ${delta}</p>
+    <table><tr><th>Strategy</th><th>Net return</th><th>Max drawdown</th><th>Fills</th></tr>${rows}</table>`;
+}
+
+async function renderIntraday() {
+  const box = $("crypto-intraday");
+  if (!box) return;
+  try {
+    const r = await fetch("/api/crypto/intraday", { cache: "no-store" });
+    if (r.status === 404) {
+      box.textContent = "Waiting for the first crypto intraday check.";
+      return;
+    }
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const doc = await r.json();
+    const opened = new Set([...box.querySelectorAll("details[open]")].map((el) => el.id));
+    const rows = doc.accounts.map((a) => `<tr><td>${a.id}</td><td>${esc(a.symbol)}</td><td>${esc(a.strategy)}</td><td>${money(a.equity)}</td>
+      <td class="${cls(a.totalReturn)}">${pct(a.totalReturn, 2)}</td><td>${num(a.qty, 5)}</td>
+      <td>${esc(a.message || a.decision?.signal || "Waiting")}</td><td>${esc(a.decision?.reason)}</td>
+      <td>${esc(dateTime(a.decision?.at))}</td></tr>`).join("");
+    const fills = doc.recentFills.map((f) => `<tr><td>${esc(dateTime(f.at))}</td><td>${f.account}</td>
+      <td>${esc(f.symbol)}</td><td>${esc(f.side)}</td><td>${num(f.qty, 5)}</td><td>${num(f.price)}</td>
+      <td>${num(f.fee)}</td></tr>`).join("");
+    box.innerHTML = `<p>Checked ${esc(dateTime(doc.updatedAt))}. Decisions use completed ${doc.intervalMinutes}-minute Coinbase bars.
+      Paper fills include ${pct(doc.fees.perSide, 2)} fees per side and ${pct(doc.fees.slippage, 2)} slippage.</p>
+      <h4>Intraday strategy leaderboard</h4>
+      <p>Equal BTC and ETH weighting over shared bars, ranked after costs. The dollar comparison uses one-minute UUP prices when available.${doc.dollar?.lastBar ?
+        ` Last UUP bar ${esc(dateTime(doc.dollar.lastBar))}.` : ""}</p>
+      ${ranked(doc.leaderboard)}
+      <details id="crypto-replay" ${opened.has("crypto-replay") ? "open" : ""}><summary>Recent historical replay</summary>
+        <p>A short replay of recent prices. Results are preliminary.</p>${ranked(doc.replayLeaderboard)}</details>
+      <details id="crypto-accounts" ${opened.has("crypto-accounts") ? "open" : ""}><summary>Accounts and latest decisions</summary>
+        <table><tr><th>Acct</th><th>Coin</th><th>Strategy</th><th>Equity</th><th>Return</th><th>Position</th><th>Decision</th>
+        <th>Reason</th><th>Bar close</th></tr>${rows}</table></details>
+      ${fills ? `<details id="crypto-fills" ${opened.has("crypto-fills") ? "open" : ""}><summary>Recent paper fills</summary><table><tr><th>Time</th><th>Acct</th><th>Coin</th>
+        <th>Side</th><th>Quantity</th><th>Price</th><th>Fee</th></tr>${fills}</table></details>` : "<p>No intraday fills yet.</p>"}`;
+  } catch (error) {
+    box.textContent = `Crypto intraday status unavailable (${error.message}).`;
+  }
+}
+
 async function renderCrypto() {
   const box = $("crypto-panel");
   if (!box) return;
@@ -55,3 +104,5 @@ async function renderCrypto() {
 
 renderCrypto();
 setInterval(renderCrypto, 5 * 60 * 1000);
+renderIntraday();
+setInterval(renderIntraday, 60_000);

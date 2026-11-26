@@ -1,9 +1,8 @@
-// Autonomous PAPER trading + the decision chat log. Paper only: this module can start exactly four engine
-// scripts (paper_trader.py, daytrader.py, decision_feed.py, drift_monitor.py and the dashboard's own price sync) and never imports or
-// calls the manual live ticket or any broker order code. Schedule (US/Eastern, weekdays):
+// Autonomous PAPER trading and decision chat log. Schedule (US/Eastern):
 //   * on launch (+3 min): swing catch-up run (processes any sessions not yet booked: fills at the next open, stops)
 //   * 21:05 price sync (dashboard sync job), 21:30 swing paper run (today's close -> orders for tomorrow's open)
-//   * 09:30-16:00 every 15 min: Schwab intraday refresh + day-trader "watch" (today's session simulated, not booked)
+//   * every 5 min during NYSE sessions: Schwab refresh and provisional stock day-trade and swing target checks
+//   * every 5 min, 24/7: BTC and ETH paper accounts advance on completed Coinbase 15-minute candles
 //   * 16:10: day-trader paper run (books today's session: entries, stops, targets, flat by close, PDT, breaker)
 //   * swing run starts with analyst_scoring.py run (scores matured AI flags, refreshes the advisory gate; always exits 0)
 //   * after every run: decision_feed.py turns all new decisions into chat entries (Massive/chat_log.sqlite3)
@@ -12,6 +11,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { easternClock } from "./workbench.js";
 
 const CHAT_SCHEMA = `
@@ -22,10 +22,15 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 CREATE INDEX IF NOT EXISTS chat_by_ticker ON chat_messages (ticker, id);
 CREATE INDEX IF NOT EXISTS chat_by_kind ON chat_messages (kind, id);`;
 
+function chatValue(value) {
+  if (!value || typeof value !== "string") return value ?? null;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
 export const TASKS = {
   swing: { label: "Swing paper run (fills at the open, stops, exits, new orders)", steps: [["analyst_scoring.py", ["run"]], ["paper_trader.py", ["run"]]] },
-  daytrade_watch: { label: "Day-trader intraday watch (Schwab refresh + today's signals, not booked)",
-    steps: [["daytrader.py", ["fetch"]], ["daytrader.py", ["run", "--dry-run", "--include-today"], { watch: true }]] },
+  daytrade_watch: { label: "Stock intraday watch (Schwab bars, paper signals, swing targets)", steps: [["daytrader.py", ["watch"]]] },
+  crypto_intraday: { label: "Crypto intraday paper run (BTC and ETH)", steps: [["crypto_intraday.py", []]] },
   daytrade_close: { label: "Day-trader paper run after the close (books today's session)", steps: [["daytrader.py", ["run", "--fetch"]]] },
   feed: { label: "Refresh the decision chat log", steps: [] },
   schwab_daily: { label: "Schwab long daily backfill (incremental, 20 minutes)",
@@ -38,7 +43,9 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
   const settingsPath = join(dataDir, "Research", "autopilot.json");
   const chatPath = join(dataDir, "chat_log.sqlite3");
   const forcedOff = String(env.TRADING_AUTOPILOT ?? "").toLowerCase() === "off";
-  const state = { running: null, last: {}, startedAt: new Date(now()).toISOString(), timer: null, schedule: {} };
+  const state = { running: null, stockWatch: null, cryptoIntraday: null, last: {}, timer: null };
+  const cryptoEnabled = () => !["TRADING_CRYPTO_PAPER", "TRADING_CRYPTO_INTRADAY"]
+    .some((key) => String(env[key] ?? "").toLowerCase() === "off");
 
   function settings() {
     try { return { enabled: true, ...JSON.parse(readFileSync(settingsPath, "utf8")) }; } catch { return { enabled: true }; }
@@ -68,7 +75,7 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
   async function feed(watchJson = null) {
     let file = null;
     if (watchJson) {
-      file = join(tmpdir(), `tm_watch_${process.pid}.json`);
+      file = join(tmpdir(), `tm_watch_${randomUUID()}.json`);
       writeFileSync(file, watchJson);
     }
     const result = await runStep("decision_feed.py", file ? ["--watch-json", file] : []);
@@ -76,40 +83,73 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
     return result;
   }
 
+  const slot = (name) => name === "daytrade_watch" ? "stockWatch" : name === "crypto_intraday" ? "cryptoIntraday" : "running";
+  const busy = (name) => state[slot(name)] ||
+    (name === "daytrade_watch" && state.running?.name === "daytrade_close" ? state.running : null) ||
+    (name === "daytrade_close" ? state.stockWatch : null);
+
   async function runTask(name, reason = "schedule") {
     const task = TASKS[name];
     if (!task) throw Object.assign(new Error("Unknown autopilot task."), { status: 400 });
-    if (state.running) throw Object.assign(new Error(`Busy: ${state.running.name} is running.`), { status: 409 });
+    const active = busy(name);
+    if (active) throw Object.assign(new Error(`Busy: ${active.name} is running.`), { status: 409 });
     const record = { name, reason, startedAt: new Date(now()).toISOString(), finishedAt: null, ok: null, summary: "" };
-    state.running = record;
+    state[slot(name)] = record;
     log("info", "Autopilot task started", { task: name, reason });
     try {
+      if (slot(name) !== "running") {
+        const [[script, args]] = task.steps;
+        const r = await runStep(script, args);
+        if (r.code !== 0) throw new Error(`${script} failed: ${(r.err || r.out).trim().split(/\r?\n/).at(-1)}`.slice(0, 500));
+        const result = JSON.parse(r.out.slice(r.out.indexOf("{")));
+        record.summary = result.message;
+        record.status = result.status;
+        if (name === "daytrade_watch") {
+          record.session = result.session;
+          record.closeMinute = result.closeMinute;
+          record.holiday = result.holiday;
+          record.freshCount = result.freshCount;
+          record.targetCount = result.targetCount;
+          record.swingTargets = result.swingTargets;
+          if (result.warning) log("warn", "Stock watch used cached bars", { error: result.warning.split(" To fix:")[0].slice(0, 300) });
+          if (result.tradesThisRun?.length || result.swingTargets?.some((t) => t.signal === "STOP WATCH")) {
+            const f = await feed(JSON.stringify(result));
+            if (f.code !== 0) throw new Error("Could not update the stock decision log.");
+          }
+        } else {
+          const fillKey = result.recentFills?.slice(0, 2).map((f) => `${f.account}:${f.at}`).join(",");
+          if (fillKey && fillKey !== state.last.crypto_intraday?.loggedFills) {
+            const f = await feed(JSON.stringify({ recentFills: result.recentFills }));
+            if (f.code !== 0) throw new Error("Could not update the crypto decision log.");
+          }
+          record.loggedFills = fillKey;
+        }
+        record.ok = true;
+        return record;
+      }
       if (name === "swing") {
         const dil = await runStep("dilution.py", ["scan"]);
         try { record.dilution = JSON.parse(dil.out.slice(dil.out.indexOf('{'))); }
         catch { record.dilution = { error: (dil.err || dil.out || "").trim().slice(-300), code: dil.code }; }
         if (dil.code !== 0) log("warn", "Dilution scan failed (paper run kept)", { task: name, code: dil.code });
       }
-      for (const [script, args, opts = {}] of task.steps) {
-        const r = await runStep(script, args);
+      for (const [script, args] of task.steps) {
+        const scheduledClose = name === "daytrade_close" && reason === "schedule";
+        const r = await runStep(script, scheduledClose ? [...args, "--scheduled-close"] : args);
         if (r.code !== 0) {
           const tail = r.err.trim().split(/\r?\n/).slice(-1)[0] ?? "";
           record.ok = false;
           record.summary = `${script} ${args.join(" ")} failed: ${tail}`.slice(0, 500);
-          // a failed Schwab fetch must not stop a watch on cached data; anything else stops the task
-          if (!(script === "daytrader.py" && args[0] === "fetch")) break;
-          continue;
+          break;
         }
-        if (opts.watch) {
-          const json = r.out.slice(r.out.indexOf("{"));
-          await feed(json);
-          try { record.summary = `watch: ${JSON.parse(json).tradesThisRun?.length ?? 0} provisional signal(s) today`; } catch { /* ignore */ }
-        } else {
-          try {
-            const parsed = JSON.parse(r.out.slice(r.out.indexOf("{")));
-            record.summary = parsed.lastRun?.message ?? parsed.message ?? record.summary;
-          } catch { /* not JSON */ }
-        }
+        try {
+          const parsed = JSON.parse(r.out.slice(r.out.indexOf("{")));
+          record.summary = parsed.lastRun?.message ?? parsed.message ?? record.summary;
+          if (scheduledClose && parsed.status === "closed") {
+            record.ok = true;
+            return record;
+          }
+        } catch { /* not JSON */ }
       }
       const f = await feed();
       try { record.feed = JSON.parse(f.out); } catch { record.feed = { error: f.err.trim().slice(-300) }; }
@@ -135,13 +175,15 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
         if (c.code !== 0) log("warn", "Crypto paper accounts failed (paper run kept)", { task: name, code: c.code });
       }
       if (name === "swing") {
+        const dollar = await runStep("dollar_study.py", ["--refresh-trade"]);
+        if (dollar.code !== 0) log("warn", "Dollar study refresh failed", { task: name, code: dollar.code });
         const m = await runStep("macro_service.py", ["refresh"]);
         try { record.macroCalendar = JSON.parse(m.out.slice(m.out.indexOf("{"))); }
         catch { record.macroCalendar = { error: (m.err || m.out || "").trim().slice(-300), code: m.code }; }
         if (m.code !== 0) log("warn", "Macro calendar refresh failed (paper run kept)", { task: name, code: m.code });
       }
       // Black swan / geopolitical poll (feeds + confirmation + paper playbook state). Never fails the paper run.
-      if ((name === "swing" || name === "daytrade_close" || name === "daytrade_watch")
+      if ((name === "swing" || name === "daytrade_close")
           && String(env.TRADING_BLACKSWAN ?? "").toLowerCase() !== "off") {
         const b = await runStep("black_swan.py", ["poll"]);
         try { record.blackSwan = JSON.parse(b.out.slice(b.out.indexOf("{"))); }
@@ -167,7 +209,7 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
     } finally {
       record.finishedAt = new Date(now()).toISOString();
       state.last[name] = record;
-      state.running = null;
+      state[slot(name)] = null;
       try { saveSettings({ ...settings(), last: state.last }); } catch { /* ignore */ }
       log(record.ok ? "info" : "warn", "Autopilot task finished", { task: name, ok: record.ok, summary: record.summary });
     }
@@ -177,36 +219,51 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
   // ------------------------------------------------------------------ schedule
   const didToday = (name, clock) => Boolean(state.last[name]?.startedAt) &&
     easternClock(Date.parse(state.last[name].startedAt)).date === clock.date;
-  function due(clock) {
+  const elapsed = (name) => now() - (Date.parse(state.last[name]?.startedAt ?? "") || 0);
+  function stockDue(clock) {
+    const last = state.last.daytrade_watch;
+    return clock.weekday && clock.minute >= 9 * 60 + 35 && clock.minute < 16 * 60 &&
+      !(last?.status === "closed" && last.session === clock.date) && elapsed("daytrade_watch") >= 5 * 60_000;
+  }
+  function due(clock, includeWatch = true) {
     if (!clock.weekday) return null;
     const m = clock.minute;
-    if (m >= 16 * 60 + 10 && !didToday("daytrade_close", clock)) return "daytrade_close";
+    const watch = state.last.daytrade_watch;
+    const todayWatch = watch?.session === clock.date ? watch : null;
+    const close = todayWatch?.closeMinute ?? 16 * 60;
+    if (!todayWatch?.holiday && m >= close + 10 && !didToday("daytrade_close", clock)) return "daytrade_close";
     if (m >= 21 * 60 + 5 && !state.syncedOn?.startsWith(clock.date) && syncPrices) {
       state.syncedOn = clock.date;
       try { syncPrices(); log("info", "Autopilot started the evening price sync"); } catch (e) { log("warn", "Price sync failed", { error: e.message }); }
       return null;
     }
-    if (m >= 21 * 60 + 30 && !didToday("swing", clock)) return "swing";
+    const swing = state.last.swing;
+    const eveningSwing = didToday("swing", clock) && (swing.reason !== "launch catch-up" ||
+      easternClock(Date.parse(swing.startedAt)).minute >= 21 * 60 + 30);
+    if (m >= 21 * 60 + 30 && !eveningSwing) return "swing";
     if (m >= 22 * 60 + 15 && !didToday("schwab_daily", clock)) return "schwab_daily";
-    if (m >= 9 * 60 + 35 && m < 16 * 60) {
-      const last = Date.parse(state.last.daytrade_watch?.startedAt ?? 0);
-      if (now() - last >= 15 * 60_000) return "daytrade_watch";
-    }
+    if (includeWatch && stockDue(clock)) return "daytrade_watch";
     return null;
   }
   function nextTimes(clock) {
     return { swingCatchUpOnLaunch: "3 minutes after launch", priceSync: "21:05 ET weekdays", swing: "21:30 ET weekdays",
-      schwabDaily: "22:15 ET weekdays (incremental, 20-minute budget)", daytradeWatch: "every 15 min 09:35-16:00 ET", daytradeClose: "16:10 ET weekdays", now: `${clock.date} ${String(Math.floor(clock.minute / 60)).padStart(2, "0")}:${String(clock.minute % 60).padStart(2, "0")} ET` };
+      schwabDaily: "22:15 ET weekdays (incremental, 20-minute budget)", daytradeWatch: "every 5 min during NYSE sessions",
+      cryptoIntraday: cryptoEnabled() ? "every 5 min, 24/7" : "disabled", daytradeClose: "10 min after NYSE close", now: `${clock.date} ${String(Math.floor(clock.minute / 60)).padStart(2, "0")}:${String(clock.minute % 60).padStart(2, "0")} ET` };
   }
   async function tick() {
-    if (!enabled() || state.running) return;
-    const name = due(easternClock(now()));
-    if (name) await runTask(name).catch((e) => log("warn", "Autopilot task error", { error: e.message }));
+    if (!enabled()) return;
+    const clock = easternClock(now());
+    const tasks = [];
+    if (!busy("crypto_intraday") && cryptoEnabled() && elapsed("crypto_intraday") >= 5 * 60_000) tasks.push("crypto_intraday");
+    if (!busy("daytrade_watch") && stockDue(clock)) tasks.push("daytrade_watch");
+    const name = !state.running && due(clock, false);
+    if (name && !busy(name)) tasks.push(name);
+    await Promise.all(tasks.map((task) => runTask(task).catch((e) => log("warn", "Autopilot task error", { error: e.message }))));
     if (!state.running && String(env.TRADING_BLACKSWAN ?? "").toLowerCase() !== "off") {
       const last = Date.parse(state.lastBlackSwanAt ?? 0);
       if (now() - last >= 15 * 60_000) {
-        const b = await runStep("black_swan.py", ["poll"]).catch((e) => ({ code: 1, out: "", err: e.message }));
         state.lastBlackSwanAt = new Date(now()).toISOString();
+        const b = await runStep("black_swan.py", ["poll"]).catch((e) => ({ code: 1, out: "", err: e.message }));
         if (b.code !== 0) log("warn", "Black swan poll failed", { code: b.code, error: (b.err || b.out || "").trim().slice(-300) });
       }
     }
@@ -220,11 +277,13 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
     state.timer = setInterval(() => { tick(); }, 60_000);
     state.timer.unref?.();
     state.launchTimer.unref?.();
+    setImmediate(() => { if (state.timer) tick(); });
   }
   function stop() { clearInterval(state.timer); clearTimeout(state.launchTimer); state.timer = null; }
 
   function status() {
-    return { enabled: enabled(), forcedOff, paperOnly: true, running: state.running, last: state.last,
+    const active = [state.running, state.stockWatch, state.cryptoIntraday].filter(Boolean);
+    return { enabled: enabled(), forcedOff, paperOnly: true, running: active[0] ?? null, active, last: state.last,
       schedule: nextTimes(easternClock(now())), market: easternClock(now()), tasks: Object.fromEntries(Object.entries(TASKS).map(([k, t]) => [k, t.label])) };
   }
 
@@ -252,7 +311,7 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
       if (afterId) { where.push("id > ?"); args.push(Number(afterId)); }
       const sql = `SELECT * FROM chat_messages ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY id DESC LIMIT ?`;
       const rows = db.prepare(sql).all(...args, Math.max(1, Math.min(1000, Number(limit) || 200))).map((r) => ({ ...r,
-        verdict: r.verdict ? JSON.parse(r.verdict) : null, data: r.data ? JSON.parse(r.data) : null }));
+        verdict: chatValue(r.verdict), data: chatValue(r.data) }));
       const kinds = db.prepare("SELECT kind, COUNT(*) AS n FROM chat_messages GROUP BY kind ORDER BY n DESC").all().map((r) => ({ ...r }));
       return { messages: rows.reverse(), kinds };
     } finally {
@@ -329,7 +388,7 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
     } catch { return null; }
   }
   function memoryItem(m) {
-    const verdict = m.verdict ? (typeof m.verdict === "string" ? JSON.parse(m.verdict) : m.verdict) : null;
+    const verdict = chatValue(m.verdict);
     const text = [m.text, m.rationale && `Why: ${m.rationale}`,
       verdict && `AI verdict used: ${verdict.verdict ?? verdict.light ?? ""} ${verdict.summary ?? verdict.reason ?? ""}`.trim()]
       .filter(Boolean).join("\n");
@@ -386,7 +445,9 @@ export function createAutopilot({ root, dataDir, python = "python", port = 3003,
     app.post("/api/autopilot/run", (request, response) => {
       const name = String(request.body?.task ?? "");
       if (!TASKS[name]) return response.status(400).json({ error: "Unknown autopilot task." });
-      if (state.running) return response.status(409).json({ error: `Busy: ${state.running.name} is running.` });
+      const active = busy(name);
+      if (active) return response.status(409).json({ error: `Busy: ${active.name} is running.` });
+      if (name === "crypto_intraday" && !cryptoEnabled()) return response.status(409).json({ error: "Crypto paper trading is disabled." });
       runTask(name, "manual").catch(() => {});
       response.status(202).json(status());
     });

@@ -47,6 +47,7 @@ export const JOBS = {
   research_attribution: { label: "Research: return attribution (market / sectors / alpha)", script: "research.py", args: ["attribution"], minutes: 2 },
   research_prob: { label: "Research: probability walk-forward (high-probability entries)", script: "research.py", args: ["prob"], minutes: 8 },
   daytrade_research: { label: "Day-trading research (Schwab bars)", script: "daytrader.py", args: ["research"], minutes: 1 },
+  dollar_study: { label: "Research: dollar, markets, and export signals", script: "dollar_study.py", args: ["--micro", "--refresh-trade"], minutes: 1 },
   paper_dry: { label: "Swing paper trader: dry run (nothing saved)", script: "paper_trader.py", args: ["run", "--dry-run"], minutes: 2 },
   daytrade_dry: { label: "Day-trading paper: dry run (nothing saved)", script: "daytrader.py", args: ["run", "--dry-run"], minutes: 1 },
   paper_run: { label: "Swing paper trader: run and SAVE paper state", script: "paper_trader.py", args: ["run"], minutes: 2, confirm: true },

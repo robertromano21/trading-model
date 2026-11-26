@@ -61,9 +61,10 @@ export function openStore(dataDir, file = "ai_research.sqlite3") {
       v.entryHigh ?? null, v.limitPrice ?? null, v.orderType ?? null, v.stop ?? null, v.takeProfit ?? null, v.atr ?? null,
       v.diversification ?? null, JSON.stringify(v.clamps || []), JSON.stringify(v));
   }
-  function latestVerdicts(tickers = null) {
-    const rows = db.prepare(`SELECT payload FROM ai_verdicts v WHERE created_at =
-      (SELECT MAX(created_at) FROM ai_verdicts w WHERE w.ticker = v.ticker) ORDER BY ticker`).all();
+  function latestVerdicts(tickers = null, source = null) {
+    const rows = db.prepare(`SELECT payload FROM ai_verdicts v WHERE (? IS NULL OR v.source = ?) AND created_at =
+      (SELECT MAX(created_at) FROM ai_verdicts w WHERE w.ticker = v.ticker AND (? IS NULL OR w.source = ?)) ORDER BY ticker`)
+      .all(source, source, source, source);
     const all = rows.map((r) => JSON.parse(r.payload));
     return tickers ? all.filter((v) => tickers.includes(v.ticker)) : all;
   }

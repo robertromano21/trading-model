@@ -2,6 +2,7 @@
 
   python daytrader.py research                 # backtest + walk-forward on cached Schwab bars -> Massive/Research
   python daytrader.py fetch                    # refresh Schwab 1- and 5-minute bars + quotes for the targets
+  python daytrader.py watch                    # evaluate completed bars during the current NYSE session
   python daytrader.py run [--fetch]            # paper-trade every cached session not yet processed
   python daytrader.py run --dry-run            # same, rolled back
   python daytrader.py status
@@ -17,7 +18,7 @@ import json
 import sqlite3
 import sys
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -152,27 +153,41 @@ def summary_sessions(bars):
 
 
 # ------------------------------------------------------------------ fetch (Schwab market data only)
-def swing_symbols():
-    """Current swing paper-trading targets and positions (so the AI layer and monitor get fresh Schwab data)."""
+def swing_targets():
+    """Current targets and positions for each swing account."""
     try:
-        with closing(sqlite3.connect(STATE_DB)) as db:
-            rows = db.execute("SELECT ticker FROM positions UNION SELECT ticker FROM signal_state WHERE asof = "
-                              "(SELECT MAX(asof) FROM signal_state)").fetchall()
-        return [r[0] for r in rows]
+        with closing(sqlite3.connect(STATE_DB.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+            db.row_factory = sqlite3.Row
+            return [dict(row) for row in db.execute("""
+                WITH latest AS (
+                    SELECT s.* FROM signal_state s JOIN accounts a
+                    ON s.account = a.name AND s.asof = a.last_processed
+                ), tracked AS (
+                    SELECT account, ticker FROM positions UNION SELECT account, ticker FROM latest
+                )
+                SELECT t.account, t.ticker, s.asof, s.target_weight, s.stop, p.shares
+                FROM tracked t LEFT JOIN latest s USING (account, ticker)
+                LEFT JOIN positions p USING (account, ticker)
+                ORDER BY t.account, t.ticker
+            """)]
     except sqlite3.Error:
         return []
 
 
-def fetch(symbols=None):
+def fetch(symbols=None, watch=False):
     from schwab_data import SchwabMarketData, fetch_history, store_quotes
-    symbols = sorted(set(symbols or DEFAULT_SYMBOLS) | set(swing_symbols()))
+    symbols = sorted(set(symbols) if symbols is not None else set(DEFAULT_SYMBOLS) |
+                     {t["ticker"] for t in swing_targets()})
     client = SchwabMarketData()
     out = {"token": client.token_status()}
     with closing(connect_cache()) as cache:
-        out["oneMinute"] = fetch_history(symbols, 10, 10, client, cache, log=lambda m: None, frequency=1)
-        out["fiveMinute"] = fetch_history(symbols, 10, 10, client, cache, log=lambda m: None, frequency=5)
         rows = store_quotes(cache, client.quotes(list(symbols)))
         out["quotes"] = len(rows)
+        if not watch:
+            out["oneMinute"] = fetch_history(symbols, 10, 10, client, cache, log=lambda m: None, frequency=1)
+        days = 1 if watch else 10
+        out["fiveMinute"] = fetch_history(symbols, days, days, client, cache, log=lambda m: None, frequency=5,
+                                          skip_failed=watch)
     return out
 
 
@@ -200,15 +215,28 @@ def apply_advisory(db, candidates, mode, asof):
 
 
 def run(account="daytrade", dry_run=False, frequency=5, initial_equity=10_000.0, params=None, advisory_mode="log",
-        include_today=False):
-    with closing(sqlite3.connect(STATE_DB, timeout=30, isolation_level=None)) as db, closing(connect_cache()) as cache:
+        include_today=False, watch_window=None, symbols=None):
+    db_path = ":memory:" if watch_window else STATE_DB
+    with closing(sqlite3.connect(db_path, timeout=30, isolation_level=None)) as db, closing(connect_cache()) as cache:
+        if watch_window and STATE_DB.exists():
+            # The swing runner can hold the paper ledger's write lock while the watch computes its preview.
+            with closing(sqlite3.connect(STATE_DB.resolve().as_uri() + "?mode=ro", uri=True)) as source:
+                source.backup(db)
         db.row_factory = sqlite3.Row
         db.executescript(SCHEMA)
         db.execute("BEGIN IMMEDIATE")
         try:
             row = db.execute("SELECT * FROM dt_accounts WHERE name=?", (account,)).fetchone()
-            bars = it.load_bars(cache, frequency)
+            if row is not None:
+                frequency = row["frequency"]
+            bars = it.load_bars(cache, frequency, symbols=symbols)
+            if watch_window:
+                date, minute = watch_window
+                bars = bars[(bars["session_date"] < date) |
+                            ((bars["session_date"] == date) & (bars["minute"] + frequency <= minute))]
             if bars.empty:
+                if watch_window:
+                    return {"tradesThisRun": [], "lastRun": {"skipped": {"missing_bars": 1}}, "account": account}
                 raise SystemExit("No cached Schwab bars. Run: python daytrader.py fetch")
             all_sessions = sorted(bars["session_date"].unique())
             if row is None:
@@ -221,6 +249,8 @@ def run(account="daytrade", dry_run=False, frequency=5, initial_equity=10_000.0,
             p = it.ORBParams(**json.loads(row["params"]))
             frequency = row["frequency"]
             pending = [d for d in all_sessions if d >= row["start_session"] and (row["last_session"] is None or d > row["last_session"])]
+            if watch_window:
+                pending = [d for d in pending if d == date]
             if not include_today and pending and pending[-1] == _eastern_today() and not _session_closed():
                 pending = pending[:-1]     # never book today's session before the close (16:05 ET); see --include-today
             run_id = db.execute("INSERT INTO dt_runs (account, started_at, mode, sessions, message) VALUES (?, ?, ?, ?, ?)",
@@ -239,7 +269,8 @@ def run(account="daytrade", dry_run=False, frequency=5, initial_equity=10_000.0,
                 if later:
                     context = pd.concat([context, it.next_session_context(panel, symbols, p, later[0])], ignore_index=True)
                 ranges = it.opening_ranges(window, p, frequency)
-                candidates = it.candidate_trades(window, ranges, context, p, frequency, cost)
+                candidates = it.candidate_trades(window, ranges, context, p, frequency, cost,
+                                                 preview_session=pending[-1] if watch_window else None)
                 if len(candidates):
                     candidates = candidates[candidates["session_date"].isin(pending)].copy()
                 advisory_notes = apply_advisory(db, candidates, advisory_mode, pending[-1])
@@ -281,7 +312,8 @@ def run(account="daytrade", dry_run=False, frequency=5, initial_equity=10_000.0,
                     macro_notes = list(macro_notes) + list(bs_notes or [])
                 except Exception as error:  # noqa: BLE001 — never fail the day-trade run
                     macro_notes = list(macro_notes) + [{"error": f"black_swan: {error}"}]
-                result = it.run_sessions(candidates, pending, p, row["equity"], cost, pdt_history=history)
+                result = it.run_sessions(candidates, pending, p, row["equity"], cost, pdt_history=history,
+                                         prior_sessions=[d for d in all_sessions if d < pending[0]])
                 for t in result.trades.itertuples(index=False):
                     db.execute("INSERT OR IGNORE INTO dt_trades VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                (account, t.session_date, t.symbol, t.direction, t.entry_minute, t.exit_minute, t.shares,
@@ -310,7 +342,6 @@ def run(account="daytrade", dry_run=False, frequency=5, initial_equity=10_000.0,
         from attribution import attribute_daytrade_result
         daily = status.get("daily")
         if daily:
-            import pandas as pd
             status["attribution"] = attribute_daytrade_result(pd.DataFrame(daily), name="daytrader_paper")
     except Exception as error:
         status["attribution"] = {"name": "daytrader_paper", "error": str(error)[:300]}
@@ -345,17 +376,86 @@ def _eastern_today():
     return _eastern_now().date().isoformat()
 
 
+def session_window(stamp):
+    import exchange_calendars
+    date = stamp.date().isoformat()
+    calendar = exchange_calendars.get_calendar("XNYS")
+    if not calendar.is_session(date):
+        return None
+    return tuple(t.tz_convert(stamp.tzinfo) for t in (calendar.session_open(date), calendar.session_close(date)))
+
+
 def _session_closed():
     stamp = _eastern_now()
-    return stamp.hour * 60 + stamp.minute >= 16 * 60 + 5
+    window = session_window(stamp)
+    return window is None or stamp >= window[1] + timedelta(minutes=5)
+
+
+def run_summary(result):
+    if "tradesThisRun" in result:
+        return result
+    return {k: result.get(k) for k in ("account", "equity", "lastSession", "lastRun", "pdt", "dryRun")} | {
+        "tradesThisRun": [t for t in result.get("trades", []) if t.get("run_id") == result["lastRun"]["runId"]]}
+
+
+def watch(account, advisory_mode):
+    stamp = _eastern_now()
+    date = stamp.date().isoformat()
+    window = session_window(stamp)
+    if window is None:
+        return {"status": "closed", "session": date, "message": "NYSE is closed.", "holiday": True}
+    close_minute = window[1].hour * 60 + window[1].minute
+    if stamp >= window[1]:
+        return {"status": "closed", "session": date, "message": "NYSE is closed.", "closeMinute": close_minute}
+    if stamp < window[0] + timedelta(minutes=5):
+        return {"status": "waiting", "session": date, "message": "Waiting for the first completed NYSE bar."}
+
+    swing = swing_targets()
+    symbols = sorted(set(DEFAULT_SYMBOLS) | {t["ticker"] for t in swing})
+    warning = None
+    try:
+        refreshed = fetch(symbols, watch=True)
+        failed = [s for s, result in refreshed["fiveMinute"].items() if result.get("error")]
+        if failed:
+            warning = f"Schwab could not refresh {', '.join(failed)}."
+    except (SchwabAuthError, OSError, RuntimeError) as error:
+        warning = str(error)
+    # The NYSE session may end during the data refresh. Use only completed bars through its actual close.
+    checked = min(_eastern_now(), window[1])
+    minute = checked.hour * 60 + checked.minute
+    with closing(connect_cache()) as cache:
+        bars = it.load_bars(cache, 5, symbols=symbols, start=date, end=date)
+    bars = bars[bars["minute"] + 5 <= minute]
+    latest = bars.sort_values("minute").groupby("symbol").last()
+    current = latest[latest["minute"] + 5 >= minute - 10]
+    fresh = sorted(current.index)
+    swing_decisions = []
+    for target in swing:
+        ticker, stop = target["ticker"], target["stop"]
+        price = float(current.loc[ticker, "close"]) if ticker in fresh else None
+        lows = bars.loc[bars["symbol"] == ticker, "low"]
+        signal = "WAIT" if price is None else (
+            "STOP WATCH" if target["shares"] and stop is not None and lows.min() <= stop else
+            "HOLD" if target["shares"] else "MONITOR")
+        swing_decisions.append({**target, "price": price, "signal": signal})
+    result = (run_summary(run(account, dry_run=True, advisory_mode=advisory_mode, include_today=True,
+                              watch_window=(date, minute), symbols=fresh)) if fresh else
+              {"account": account, "tradesThisRun": []})
+    count = len(result["tradesThisRun"])
+    return {**result, "status": "tracking" if fresh else "waiting", "session": date, "checkedAt": checked.isoformat(),
+            "closeMinute": close_minute,
+            "targetCount": len(symbols), "freshCount": len(fresh), "swingTargets": swing_decisions,
+            "warning": warning, "message": f"{len(fresh)}/{len(symbols)} stock targets have recent bars; "
+            f"{count} provisional day-trade signal(s), {len(swing)} swing target/position check(s)."}
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["research", "fetch", "run", "status"])
+    parser.add_argument("command", choices=["research", "fetch", "run", "status", "watch"])
     parser.add_argument("--account", default="daytrade")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--fetch", action="store_true", help="Refresh Schwab bars/quotes before a paper run.")
+    parser.add_argument("--scheduled-close", action="store_true", help="Only run after today's real NYSE session closes.")
     parser.add_argument("--initial-equity", type=float, default=10_000.0)
     parser.add_argument("--no-pdt", action="store_true", help="New account without the PDT limit (>= $25k or cash).")
     parser.add_argument("--include-today", action="store_true",
@@ -368,7 +468,15 @@ def main(argv=None):
             result = research(initial_equity=args.initial_equity)
         elif args.command == "fetch":
             result = fetch()
+        elif args.command == "watch":
+            result = watch(args.account, args.advisory)
         elif args.command == "run":
+            if args.scheduled_close:
+                stamp = _eastern_now()
+                window = session_window(stamp)
+                if window is None or stamp < window[1] + timedelta(minutes=5):
+                    print(_json({"status": "closed", "message": "No completed NYSE session to book today."}))
+                    return
             if args.fetch:
                 try:
                     print(_json({"fetch": fetch()}), file=sys.stderr)
@@ -377,8 +485,7 @@ def main(argv=None):
             params = it.ORBParams(pdt_max_day_trades=None) if args.no_pdt else None
             result = run(args.account, args.dry_run, initial_equity=args.initial_equity, params=params,
                          advisory_mode=args.advisory, include_today=args.include_today)
-            result = {k: result.get(k) for k in ("account", "equity", "lastSession", "lastRun", "pdt", "dryRun")} | {
-                "tradesThisRun": [t for t in result.get("trades", []) if t.get("run_id") == result["lastRun"]["runId"]]}
+            result = run_summary(result)
         else:
             with closing(sqlite3.connect(STATE_DB)) as db, closing(connect_cache()) as cache:
                 db.row_factory = sqlite3.Row

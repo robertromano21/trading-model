@@ -140,7 +140,7 @@ def opening_ranges(bars, params, frequency):
     return ranges
 
 
-def candidate_trades(bars, ranges, context, params, frequency, cost_model):
+def candidate_trades(bars, ranges, context, params, frequency, cost_model, preview_session=None):
     """Every qualifying breakout with its full path to exit (selection under limits happens later)."""
     p = params
     merged = ranges.merge(context, on=["symbol", "session_date"], how="inner")
@@ -173,7 +173,8 @@ def candidate_trades(bars, ranges, context, params, frequency, cost_model):
                 continue                                   # gapped through the stop before we got in
             risk = abs(raw_entry - stop)
             target = raw_entry + direction * p.target_r * risk if p.target_r else None
-            exit_i, exit_raw, reason = len(minutes) - 1, c[-1], "close"
+            exit_i, exit_raw = len(minutes) - 1, c[-1]
+            reason = "open" if row.session_date == preview_session else "close"
             for i in range(entry_i, len(minutes)):
                 if direction > 0:
                     if l[i] <= stop:
@@ -206,19 +207,22 @@ class DayTradeResult:
     skipped: dict = field(default_factory=dict)
 
 
-def run_sessions(candidates, sessions, params, initial_equity=10_000.0, cost_model=None, pdt_history=None):
+def run_sessions(candidates, sessions, params, initial_equity=10_000.0, cost_model=None, pdt_history=None,
+                 prior_sessions=()):
     """Walk sessions in order, taking candidates chronologically subject to slots, PDT and the loss breaker."""
     p = params
     cost_model = cost_model or CostModel.for_broker("schwab")
     equity = float(initial_equity)
     day_trade_log = list(pdt_history or [])          # session dates of earlier day trades (one entry per trade)
+    calendar = list(prior_sessions) + list(sessions)
     taken, daily_rows = [], []
     skipped = {"pdt": 0, "slots": 0, "breaker": 0, "size": 0}
     by_day = {d: g.sort_values(["entry_minute", "rel_volume"], ascending=[True, False])
               for d, g in candidates.groupby("session_date")} if len(candidates) else {}
     for index, day in enumerate(sessions):
         start_equity = equity
-        recent_sessions = set(sessions[max(0, index - p.pdt_window + 1):index])
+        offset = len(prior_sessions) + index
+        recent_sessions = set(calendar[max(0, offset - p.pdt_window + 1):offset])
         used = sum(1 for d in day_trade_log if d in recent_sessions)
         open_until = []                                     # (exit minute, notional) of open positions
         realized = []                                       # (exit_minute, pnl)

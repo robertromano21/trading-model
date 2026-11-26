@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const massiveDir = (dataDir) => dataDir || process.env.PRICES_DATA_DIR || fileURLToPath(new URL("../../Massive", import.meta.url));
 export const SNAPSHOT_REL = ["Research", "crypto", "crypto_snapshot.json"];
 export const PAPER_REL = ["Research", "crypto", "paper", "crypto_paper_status.json"];
+export const INTRADAY_REL = ["Research", "crypto", "paper", "crypto_intraday_status.json"];
 export const REFRESH_MS = 5 * 60_000;
 
 // Coin symbols are never stock tickers in a crypto question (BTC is also a Grayscale ETF, SOL/LINK are equities).
@@ -96,7 +97,8 @@ export async function cryptoStatus({ root, dataDir, python, refresh = true, log 
   if (refresh && snapshotAgeMs(dir) > 10 * 60_000) refreshed = await refreshSnapshot({ root, python, maxAgeMin: 0, timeoutMs: 40_000, log });
   const snap = readJson(join(dir, ...SNAPSHOT_REL));
   const paper = readJson(join(dir, ...PAPER_REL));
-  if (!snap && !paper) return { available: false, context: "[CRYPTO] No crypto snapshot yet (engine/crypto_snapshot.py)." };
+  const intraday = readJson(join(dir, ...INTRADAY_REL));
+  if (!snap && !paper && !intraday) return { available: false, context: "[CRYPTO] No crypto snapshot yet (engine/crypto_snapshot.py)." };
   const accounts = (paper?.accounts || []).map((a) => ({ id: a.id, label: a.label, equity: a.equity, totalReturn: a.totalReturn,
     maxDrawdown: a.maxDrawdown, targetWeights: a.targetWeights, cash: a.cash, schwabTradableNow: a.schwabTradableNow,
     dollarAware: a.dollarAware, backtestSharpe: a.preHoldoutBacktest?.sharpe, backtestMaxDD: a.preHoldoutBacktest?.maxDrawdown }));
@@ -106,6 +108,7 @@ export async function cryptoStatus({ root, dataDir, python, refresh = true, log 
     short: snap?.short ?? null,   // SBIT (-2x) / BITI (-1x) inverse-ETF research + shadow accounts 220-223
     paper: paper && { forwardStart: paper.forwardStart, dataEnd: paper.dataEnd, days: paper.days, leader: paper.leader,
       btcBaselineReturn: paper.btcBaselineReturn, accounts },
+    intraday,
     notes: "Spot from Coinbase public candles (UTC days, 24/7); Schwab market data for futures, $BTC/$ETH indexes and ETPs; "
       + "FRED CBBTCUSD/CBETHUSD fallback. Schwab Crypto trades BTC and ETH at 0.75% per side; SOL/AVAX/LINK announced. "
       + "Crypto accounts 200-223 are paper simulations only; 220-223 are SBIT shadow experiments. SBIT is a -2x daily "

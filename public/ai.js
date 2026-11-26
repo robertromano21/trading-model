@@ -87,7 +87,10 @@
   $("prompt-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const text = $("prompt").value.trim(); if (!text) return;
-    history.push(text); historyIndex = history.length; $("prompt").value = ""; send(text);
+    const chat = window.TradingAnalystChat;
+    if (chat && !chat.submit(text, $("model-select").value || undefined)) return;
+    history.push(text); historyIndex = history.length; $("prompt").value = "";
+    if (!chat) void send(text);
   });
   $("prompt").addEventListener("keydown", (e) => {
     if (e.key === "ArrowUp" && historyIndex > 0) { $("prompt").value = history[--historyIndex]; e.preventDefault(); }

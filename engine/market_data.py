@@ -110,14 +110,19 @@ def load_panel(start=None, end=None, min_avg_dollar_volume=5e6, min_avg_price=2.
             masked = connection.execute(
                 "SELECT ticker, date FROM price_anomalies WHERE status = 'masked'").fetchall()
         keep -= flagged - {MARKET}
+        # A targeted analysis or intraday watch only needs its requested symbols plus SPY.
+        ticker_filter, ticker_params = "", ()
+        if tickers is not None and len(keep) <= 500:
+            ticker_params = tuple(sorted(keep))
+            ticker_filter = " AND ticker IN (" + ", ".join("?" for _ in ticker_params) + ")"
         frame = pd.read_sql_query(
-            "SELECT ticker, date, open, high, low, close, volume FROM daily_prices WHERE date BETWEEN ? AND ?",
-            connection, params=(start, end))
+            "SELECT ticker, date, open, high, low, close, volume FROM daily_prices WHERE date BETWEEN ? AND ?"
+            + ticker_filter, connection, params=(start, end, *ticker_params))
         dividends = pd.DataFrame(columns=["ticker", "market_date", "cash"])
         if _table_exists(connection, "backtest_dividends"):
             dividends = pd.read_sql_query(
-                "SELECT ticker, market_date, cash FROM backtest_dividends WHERE unsupported = 0 AND market_date BETWEEN ? AND ?",
-                connection, params=(start, end))
+                "SELECT ticker, market_date, cash FROM backtest_dividends WHERE unsupported = 0 AND market_date BETWEEN ? AND ?"
+                + ticker_filter, connection, params=(start, end, *ticker_params))
         long_rows = []
         if long_available and keep:
             from schwab_daily import load_long_frame

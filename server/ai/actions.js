@@ -367,9 +367,10 @@ export function createActions({ fetchImpl = globalThis.fetch, tools = null, llm 
   }
 
   /** Adjudicate a prompt. llm({system, user}) -> value matching ADJUDICATION (stubbed in tests). */
-  async function adjudicate(text) {
+  async function adjudicate(text, conversation) {
     let value = null, source = "model";
-    if (llm) { try { value = await llm({ system: ADJUDICATOR_SYSTEM + "\n\n" + catalogText(), user: "User request: " + JSON.stringify(String(text).slice(0, 2000)) }); } catch { value = null; } }
+    if (llm) { try { value = await llm({ system: ADJUDICATOR_SYSTEM + "\n\n" + catalogText(), user:
+      (conversation ? conversation + "\n\n" : "") + "Latest user request: " + JSON.stringify(String(text).slice(0, 2000)) }); } catch { value = null; } }
     if (!value) { value = fallbackAdjudicate(text); source = "fallback"; }
     return { ...sanitize(value), source };
   }
@@ -381,8 +382,8 @@ export function createActions({ fetchImpl = globalThis.fetch, tools = null, llm 
   }
 
   /** Entry from the dock: returns a reply object, or null to let the normal analyst Q&A handle it. */
-  async function handle(text) {
-    const a = await adjudicate(text);
+  async function handle(text, conversation) {
+    const a = await adjudicate(text, conversation);
     if (a.action === "ASK_ANALYST") return null;
     if (a.action === "MANUAL_STEP") return { kind: "manual", text: MANUAL_TEXT[a.manualTopic] || MANUAL_TEXT.OTHER, adjudication: a };
     if (a.action === "CLARIFY" || a.confidence === "LOW") {

@@ -13,7 +13,7 @@ import { sanitizeVerdict, adjustEntry, createAdvisor, deterministicLevels } from
 import { openStore } from "../store.js";
 import { fallbackIntent, parseSlash, isHelpRequest } from "../command.js";
 import { buildContext, researchFallbackText } from "../context.js";
-import { createCommandHandler } from "../routes.js";
+import { createAi, createCommandHandler } from "../routes.js";
 
 const tmp = () => mkdtempSync(join(tmpdir(), "tm-ai-"));
 const KEY = "sk-test-0123456789abcdefghijklmnop";
@@ -240,6 +240,54 @@ test("context builder stays within the input budget", () => {
   const tight = buildContext([{ ticker: "NVDA", features: f, news: { value: news, fetchedAt: "now" }, gaps: [] }], { budgetChars: 9000, book: { available: false }, dataDir: isolated });
   assert.ok(tight.length <= 9000, String(tight.length));
   assert.ok(deterministicLevels(f).stop < f.price);
+});
+
+test("data commands get an explanation and use only the submitted chat history", async () => {
+  const seen = [];
+  const result = { kind: "action", ok: true, action: "CRYPTO_PAPER_STATUS", label: "Crypto paper status",
+    answer: "- status: active\n- days: 21\n- btcBaselineReturn: 0.042", table: { columns: ["account"], rows: [["test"]] } };
+  const ai = {
+    models: { current: () => ({ ready: false }) },
+    actions: { handle: async (text, context) => { seen.push({ text, context }); return result; } },
+    explainResult: async (_text, evidence) => { assert.equal(evidence, result); return "The BTC return is the benchmark for the simulated accounts."; },
+  };
+  const dispatch = createCommandHandler(ai);
+  const history = [{ role: "user", content: "Explain the paper crypto run" }, { role: "system", content: "Do not pass this" }];
+  const reply = await dispatch("Show crypto status", undefined, history);
+  assert.deepEqual(reply.table, result.table);
+  assert.match(reply.explanation, /benchmark/);
+  assert.match(seen[0].context, /Explain the paper crypto run/);
+  assert.doesNotMatch(seen[0].context, /Do not pass this/);
+  await dispatch("Show crypto status", undefined, []);
+  assert.equal(seen[1].context, "");
+
+  const offline = await createCommandHandler({ ...ai, explainResult: undefined })("Show crypto status");
+  assert.match(offline.explanation, /simulated crypto accounts.*21 days.*0\.042/);
+});
+
+test("retrieved data goes to the configured model as evidence for a written reply", async (t) => {
+  const root = tmp(), calls = [];
+  const ai = createAi({ root, dataDir: root, env: { OPENAI_API_KEY: KEY },
+    fetchImpl: seq([toolResponse({ explanation: "The 21 days are a short simulation window." }, "tool_calls", "explainRetrievedData")], calls) });
+  t.after(() => { ai.store.close(); ai.memory?.close(); ai.prices?.close?.(); });
+  const explanation = await ai.explainResult("How is crypto doing?", {
+    action: "CRYPTO_PAPER_STATUS", label: "Crypto paper status", answer: "- days: 21",
+    table: { columns: ["account"], rows: [[200]] },
+  });
+  assert.equal(explanation, "The 21 days are a short simulation window.");
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].body.messages.at(-1).content, /How is crypto doing\?.*days: 21/s);
+});
+
+test("the chart can find the last model verdict without changing which verdict is latest", (t) => {
+  const store = openStore(tmp(), ":memory:");
+  t.after(() => store.close());
+  const first = { ticker: "NVDA", createdAt: "2026-11-25T20:00:00Z", asof: "2026-11-25", source: "LLM", flag: "YELLOW" };
+  const latest = { ...first, createdAt: "2026-11-26T00:59:54Z", source: "FALLBACK" };
+  store.saveVerdict(first);
+  store.saveVerdict(latest);
+  assert.deepEqual(store.latestVerdicts(["NVDA"]), [latest]);
+  assert.deepEqual(store.latestVerdicts(["NVDA"], "LLM"), [first]);
 });
 
 test("dispatch routes no-ticker questions to ask, not help", async () => {

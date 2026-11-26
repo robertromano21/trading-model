@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/macro-nowcast.css">
   <script src="/nav.js"></script>
   <script type="module" src="/macro-nowcast.js"></script>
+  <script type="module" src="/dollar-study.js"></script>
   <script type="module" src="/fred-key.js"></script>
   <script type="module" src="/massive-key.js"></script>
 </head>
@@ -17,6 +18,8 @@
     <section class="box"><h2>Macro nowcasts (ours, raw data only)</h2>
       <p class="muted">GDPNow-style estimates of the next CPI, core CPI, core PCE, unemployment, payrolls and GDP prints, rebuilt from point-in-time FRED/ALFRED data (claims, gasoline, oil, breakevens, the dollar, NFCI, WEI, the yield curve…). Outside forecasts (Cleveland Fed, GDPNow, SPF, a consensus slot) are shown beside ours for comparison only and are never model inputs. Research only; the paper accounts are unchanged.</p>
       <div id="nowcast-panel"></div></section>
+    <section id="dollar" class="box"><h2>Dollar growth, markets, and trade</h2>
+      <div id="dollar-study">Loading…</div></section>
     <section class="box"><h2>Data keys</h2><div data-massive-key></div><div data-fred-key></div></section>
   </main>
 </body>

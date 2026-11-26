@@ -197,7 +197,8 @@ def store_candles(connection, symbol, candles, frequency=1, regular_only=True):
     return len(rows)
 
 
-def fetch_history(symbols, days=48, chunk_days=10, client=None, cache=None, log=print, frequency=1):
+def fetch_history(symbols, days=48, chunk_days=10, client=None, cache=None, log=print, frequency=1,
+                  skip_failed=False):
     client = client or SchwabMarketData()
     own = cache is None
     cache = cache or connect_cache()
@@ -209,7 +210,15 @@ def fetch_history(symbols, days=48, chunk_days=10, client=None, cache=None, log=
             stop = end
             while stop > end - timedelta(days=days):
                 start = max(stop - timedelta(days=chunk_days), end - timedelta(days=days))
-                payload = client.price_history(symbol, start, stop, frequency=frequency)
+                try:
+                    payload = client.price_history(symbol, start, stop, frequency=frequency)
+                except SchwabAuthError:
+                    raise
+                except (RuntimeError, OSError) as error:
+                    if not skip_failed:
+                        raise
+                    summary[symbol] = {"error": str(error)}
+                    break
                 candles = payload.get("candles", []) if isinstance(payload, dict) else []
                 stored = store_candles(cache, symbol, candles, frequency)
                 with cache:
@@ -220,6 +229,8 @@ def fetch_history(symbols, days=48, chunk_days=10, client=None, cache=None, log=
                 stop = start
                 if not candles:
                     break                       # nothing older available
+            if symbol in summary:
+                continue
             first, last, sessions = cache.execute(
                 "SELECT MIN(session_date), MAX(session_date), COUNT(DISTINCT session_date) FROM intraday_bars "
                 "WHERE symbol=? AND frequency=?", (symbol, frequency)).fetchone()

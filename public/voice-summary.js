@@ -1,4 +1,4 @@
-/* Spoken summary of an AI analyst reply: a short first-person gist, never the tables or long text verbatim.
+/* Spoken prose from an AI analyst reply, in Light or Verbose mode.
  * Works in the browser (window.TradingVoiceSummary) and in Node tests (module.exports). */
 (function (root, factory) {
   const api = factory();
@@ -50,13 +50,13 @@
     const max = (opts && opts.max) || MAX;
     if (!v || typeof v !== "object") return "";
     if (v.kind === "help" || v.kind === "job") return "";
-    if (v.kind === "decision" && Array.isArray(v.decisions)) {
+    if (!v.explanation && v.kind === "decision" && Array.isArray(v.decisions)) {
       const usable = v.decisions.filter((d) => d && d.usable);
       if (!usable.length) return "No decision changes from the analyst.";
       const parts = usable.slice(0, 3).map((d) => `${d.ticker} ${String(d.flag || "").toLowerCase()} ${String(d.action || "").toLowerCase()}`.trim());
       return clip(speakable(`Decision update: ${parts.join("; ")}${usable.length > 3 ? `, and ${usable.length - 3} more` : ""}.`), max);
     }
-    const body = plain(v.answer || v.text || "");
+    const body = plain(v.explanation || v.answer || v.text || "");
     if (!body) return "";
     const lead = [];
     if (v.stance && v.kind === "answer" && !/^(n\/a|none|neutral_info)$/i.test(String(v.stance))) {
@@ -73,5 +73,11 @@
     return clip(speakable(out), max);
   }
 
-  return { summarizeReply, plain, sentences, speakable, clip, MAX };
+  function narrateReply(v, mode = "verbose") {
+    if (!v || v.kind === "help" || v.kind === "job") return "";
+    if (mode === "light" || (!v.explanation && v.kind === "decision")) return summarizeReply(v);
+    return speakable(plain(v.explanation || v.answer || v.text || ""));
+  }
+
+  return { narrateReply, summarizeReply, plain, sentences, speakable, clip, MAX };
 });

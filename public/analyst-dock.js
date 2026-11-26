@@ -25,8 +25,11 @@
   if (window.__tmAnalystDock || typeof document === "undefined") return;
   window.__tmAnalystDock = true;
 
-  const STORE = "tm.console.v1";
+  const STORE = "tm.console.v2";
+  const PRIOR_STORE = "tm.console.v1";
   const OLD_STORE = "tm.analystDock.v1";
+  const CHAT_PREFIX = "tm.console.chat.";
+  const FEED = "tm.console.alerts";
   const HIST = "tm.console.history";
   const LOG_LAYOUT = "tm.console.logLayout";
   const LOG_ZOOMS = [100, 125, 150, 200, 300];
@@ -35,13 +38,12 @@
   const LOG_MIN_HEIGHT = 126;
   const MAX_INPUT = 2000;           // the server builds up to ~9,500 chars of data context around the question
   const MAX_ENTRIES = 200;
-  const MAX_BYTES = 150_000;
   const MAX_HIST = 50;
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   // Log types: [id, short tag, filter group]. Alert categories match server/alerts/categories.js.
   const TYPES = {
-    user: ["YOU", "analyst"], analyst: ["ANALYST", "analyst"], pending: ["ANALYST", "analyst"], err: ["ERROR", "system"],
+    user: ["YOU", "analyst"], analyst: ["ANALYST", "analyst"], pending: ["ANALYST", "analyst"], err: ["ERROR", "analyst"],
     trade_main: ["MAIN", "trades"], trade_swarm: ["SWARM", "trades"], trade_crypto: ["CRYPTO", "trades"], trade_options: ["OPTIONS", "trades"],
     signals: ["SIGNAL", "signals"], black_swan: ["SWAN", "risk"], dollar_shock: ["DOLLAR", "risk"],
     regime: ["REGIME", "macro"], macro: ["MACRO", "macro"], system: ["SYSTEM", "system"],
@@ -50,35 +52,71 @@
 
   if (!window.TradingVoiceSummary) {
     const s = document.createElement("script");
-    s.src = "/voice-summary.js";
+    s.src = "/voice-summary.js" + (window.__tmAssetVersion ? "?v=" + window.__tmAssetVersion : "");
     document.head.appendChild(s);
   }
 
   // ---- state -------------------------------------------------------------------------------------------------
-  function load() {
-    let v = {};
-    try { v = JSON.parse(localStorage.getItem(STORE) || "{}") || {}; } catch {}
-    const st = {
-      mode: ["full", "prompt", "tab"].includes(v.mode) ? v.mode : "full",
-      filter: GROUPS.some((g) => g[0] === v.filter) ? v.filter : "all",
-      entries: Array.isArray(v.entries) ? v.entries : [],
-      draft: typeof v.draft === "string" ? v.draft : "",
-    };
-    if (!Array.isArray(v.entries)) { // one-time carry-over of the earlier analyst chat
-      try {
-        const old = JSON.parse(localStorage.getItem(OLD_STORE) || "{}");
-        if (Array.isArray(old.msgs)) st.entries = old.msgs.filter((m) => m && m.role !== "pending").map((m) =>
-          m.role === "ai" ? { type: "analyst", v: m.v, ts: m.ts } : { type: m.role === "err" ? "err" : "user", text: m.text, ts: m.ts, retry: m.retry });
-      } catch {}
-    }
-    return st;
+  function readLocal(key) {
+    try { return JSON.parse(localStorage.getItem(key)); } catch { return null; }
   }
-  let state = load();
-  function save() {
-    state.entries = state.entries.slice(-MAX_ENTRIES);
-    let json = JSON.stringify(state);
-    while (json.length > MAX_BYTES && state.entries.length > 5) { state.entries.shift(); json = JSON.stringify(state); }
-    try { localStorage.setItem(STORE, json); } catch {}
+  function writeLocal(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; }
+  }
+  const prefs = readLocal(STORE) || readLocal(PRIOR_STORE) || {};
+  const state = {
+    mode: ["full", "prompt", "tab"].includes(prefs.mode) ? prefs.mode : "full",
+    filter: GROUPS.some(([id]) => id === prefs.filter) ? prefs.filter : "all",
+  };
+  const chatStorage = new Map();
+  const freshChat = (id = crypto.randomUUID()) => ({ id, title: "", updatedAt: new Date().toISOString(), entries: [], draft: "" });
+  function readChat(id) {
+    const saved = chatStorage.get(id) || readLocal(CHAT_PREFIX + id);
+    return saved?.id === id && Array.isArray(saved.entries) ? saved : null;
+  }
+  function saveSettings() { writeLocal(STORE, { ...state, chatId: chat.id }); }
+  function legacyEntries() {
+    if (Array.isArray(prefs.entries)) return prefs.entries;
+    if (prefs.chatId) return [];
+    const old = readLocal(OLD_STORE);
+    return Array.isArray(old?.msgs) ? old.msgs.filter((m) => m && m.role !== "pending").map((m) =>
+      m.role === "ai" ? { type: "analyst", v: m.v, ts: m.ts } : { type: m.role === "err" ? "err" : "user", text: m.text, ts: m.ts, retry: m.retry }) : [];
+  }
+  const isAlert = (entry) => String(entry?.id || "").startsWith("a:");
+  const previous = legacyEntries().filter(Boolean);
+  const savedAlerts = readLocal(FEED);
+  let alerts = Array.isArray(savedAlerts) ? savedAlerts : previous.filter(isAlert);
+  const storedChat = readChat(prefs.chatId || "previous");
+  let chat = storedChat ?? freshChat(prefs.chatId || "previous");
+  if (!storedChat && !prefs.chatId && previous.length) {
+    chat.entries = previous.filter((entry) => !isAlert(entry));
+    chat.draft = typeof prefs.draft === "string" ? prefs.draft : "";
+    chat.title = chat.entries.find((entry) => entry.type === "user")?.text?.trim().slice(0, 56) || "";
+    writeLocal(FEED, alerts);
+  } else if (!storedChat && !prefs.chatId && typeof prefs.draft === "string") chat.draft = prefs.draft;
+
+  function savedChats() {
+    const chats = new Map([[chat.id, chat], ...chatStorage]);
+    try {
+      for (let index = 0; index < localStorage.length; index++) {
+        const key = localStorage.key(index);
+        if (!key?.startsWith(CHAT_PREFIX)) continue;
+        const id = key.slice(CHAT_PREFIX.length);
+        if (!chats.has(id)) {
+          const saved = readChat(id);
+          if (saved) chats.set(id, saved);
+        }
+      }
+    } catch {}
+    return [...chats.values()].filter((saved) => saved.id === chat.id || saved.entries.length || saved.draft)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  function conversation() {
+    return chat.entries.filter((entry) => entry.type === "user" || (entry.type === "analyst" && entry.v?.kind !== "confirm"))
+      .slice(-8).map((entry) => entry.type === "user" ? { role: "user", content: entry.text }
+        : { role: "assistant", content: [entry.v?.explanation, entry.v?.answer || entry.v?.text || entry.v?.prompt].filter(Boolean).join("\n").slice(0, 2000) })
+      .filter((message) => message.content);
   }
   function loadLogLayout() {
     let saved;
@@ -113,21 +151,22 @@
         summary: { action: String(sm.action || "").slice(0, 60), title: String(sm.title || "").slice(0, 200), args: list(sm.args, 12), affects: list(sm.affects, 8) } };
     }
     if (v.kind === "action" || v.kind === "clarify" || v.kind === "manual" || v.kind === "cancelled" || (v.kind === "error" && v.text)) {
-      const keep = { kind: v.kind, label: String(v.label || "").slice(0, 200), text: String(v.answer || v.text || "").slice(0, 8000) };
+      const keep = { kind: v.kind, label: String(v.label || "").slice(0, 200), text: String(v.answer || v.text || "").slice(0, 8000),
+        explanation: String(v.explanation || "").slice(0, 4000) };
       if (v.table && Array.isArray(v.table.columns) && Array.isArray(v.table.rows)) {
         keep.table = { columns: v.table.columns.slice(0, 8).map((c) => String(c).slice(0, 40)), rows: v.table.rows.slice(0, 12).map((r) => (Array.isArray(r) ? r : []).slice(0, 8).map((c) => String(c ?? "").slice(0, 60))) };
       }
       return keep;
     }
     const keep = { kind: v.kind || v.type || "answer" };
-    for (const k of ["answer", "text", "message", "prompt", "stance", "conviction", "source", "model", "error"]) if (v[k] != null) keep[k] = String(v[k]).slice(0, 12000);
+    for (const k of ["answer", "text", "explanation", "message", "prompt", "stance", "conviction", "source", "model", "error"]) if (v[k] != null) keep[k] = String(v[k]).slice(0, 12000);
     if (Array.isArray(v.followUps)) keep.followUps = v.followUps.slice(0, 4).map((x) => String(x).slice(0, 200));
     if (Array.isArray(v.levels)) keep.levels = v.levels.slice(0, 8).map((l) => ({ label: String(l.label ?? ""), price: l.price }));
     if (Array.isArray(v.citations)) keep.citations = v.citations.slice(0, 8).map((c) => ({ source: String(c.source ?? ""), asOf: String(c.asOf ?? ""), detail: String(c.detail ?? "").slice(0, 300) }));
     if (Array.isArray(v.decisions)) keep.decisions = v.decisions.slice(0, 30).map((d) => ({ ticker: d.ticker, usable: !!d.usable, flag: d.flag, action: d.action, sizeScale: d.sizeScale, stop: d.stop, reason: d.reason }));
     if (v.kind === "job" && v.result) keep.text = String(v.result).slice(0, 4000);
     if (!keep.answer && !keep.text && (keep.message || keep.prompt)) keep.text = keep.message || keep.prompt;
-    if (!keep.answer && !keep.text && !keep.decisions) keep.text = JSON.stringify(v.research || v.verdicts || v, null, 1).slice(0, 4000);
+    if (!keep.answer && !keep.text && !keep.decisions) keep.text = JSON.stringify(v.research || v.verdicts || v.run || v, null, 1).slice(0, 4000);
     return keep;
   }
 
@@ -194,11 +233,13 @@
     if (v.kind === "action" || v.kind === "clarify" || v.kind === "manual" || v.kind === "cancelled" || v.kind === "error") {
       const table = v.table?.columns?.length ? renderTable(v.table.columns, v.table.rows ?? []) : "";
       const head = v.kind === "action" && v.label ? `<div class="tmc-meta"><span class="tmc-b">${esc(v.label)}</span></div>` : "";
-      return head + `<div class="tmc-act k-${esc(v.kind)}">${markdown(v.text || "")}</div>` + table;
+      const details = `<div class="tmc-act k-${esc(v.kind)}">${markdown(v.text || "")}</div>` + table;
+      return head + (v.explanation ? markdown(v.explanation) + `<details><summary>Data and figures</summary>${details}</details>` : details);
     }
     if (v.kind === "help") return `<pre>${esc(v.text)}</pre>`;
     if (v.kind === "decision" && v.decisions) {
-      return "<pre>" + esc(v.decisions.map((d) => `${d.ticker}: ${d.usable ? `${d.flag} ${d.action}, size x${d.sizeScale}, stop ${d.stop}` : `no change (${d.reason})`}`).join("\n")) + "</pre>";
+      const details = "<pre>" + esc(v.decisions.map((d) => `${d.ticker}: ${d.usable ? `${d.flag} ${d.action}, size x${d.sizeScale}, stop ${d.stop}` : `no change (${d.reason})`}`).join("\n")) + "</pre>";
+      return v.explanation ? markdown(v.explanation) + `<details><summary>Data and figures</summary>${details}</details>` : details;
     }
     if (v.answer != null) {
       const meta = [v.stance && `<span class="tmc-b">${esc(v.stance)}</span>`, v.conviction && `conviction ${esc(v.conviction)}`,
@@ -210,7 +251,8 @@
         (levels ? `<details><summary>Levels</summary><ul>${levels}</ul></details>` : "") +
         (cites ? `<details><summary>Sources</summary><ul>${cites}</ul></details>` : "") + (fu ? `<div class="tmc-fus">${fu}</div>` : "");
     }
-    return `<pre>${esc(v.text || "")}</pre>`;
+    const data = `<pre>${esc(v.text || "")}</pre>`;
+    return v.explanation ? markdown(v.explanation) + `<details><summary>Data and figures</summary>${data}</details>` : data;
   }
 
   // Alert -> log entry (only display fields are kept).
@@ -249,12 +291,19 @@
             <select class="tmc-zoom" aria-label="Command log zoom" title="Command log zoom">${LOG_ZOOMS.map((zoom) => `<option value="${zoom}">${zoom}%</option>`).join("")}</select>
             <button type="button" class="tmc-reset-layout" title="Restore the default size, position, and zoom">Reset</button>
           </div>
+          <div class="tmc-chats">
+            <select class="tmc-chat-select" aria-label="Saved chats"></select>
+            <button type="button" class="tmc-new-chat">New chat</button>
+          </div>
+          <p class="tmc-chat-warning" role="status" hidden>Browser storage is full or unavailable. This chat could not be saved.</p>
           <span class="tmc-filters" role="group" aria-label="Show in log">${GROUPS.map(([id, label]) =>
             `<button type="button" class="tmc-chip" data-filter="${id}" aria-pressed="false">${esc(label)}</button>`).join("")}</span>
           <span class="tmc-tools">
             <button type="button" class="tmc-voice" aria-pressed="true" title="Speak analyst replies and trade alerts">Voice</button>
+            <select class="tmc-narration" aria-label="Analyst narration length" title="How much of each reply to read aloud">
+              <option value="verbose">Verbose</option><option value="light">Light</option>
+            </select>
             <button type="button" class="tmc-mute" title="Voice settings and mute by category">Mute…</button>
-            <button type="button" class="tmc-clear" title="Clear the log">Clear</button>
             <button type="button" class="tmc-fold" title="Hide the log (Esc)" aria-label="Hide the log">▾</button>
           </span>
         </header>
@@ -277,9 +326,45 @@
     const q = (sel) => root.querySelector(sel);
     const log = q(".tmc-log"), input = q(".tmc-input"), status = q(".tmc-status"), jump = q(".tmc-jump"), voiceBtn = q(".tmc-voice"),
       unlockBtn = q(".tmc-unlock"), tab = q(".tmc-tab"), logBtn = q(".tmc-logbtn");
-    const panel = q(".tmc-logwrap"), zoomSelect = q(".tmc-zoom");
+    const panel = q(".tmc-logwrap"), zoomSelect = q(".tmc-zoom"), narrationSelect = q(".tmc-narration");
     const page = document.documentElement;
-    input.value = state.draft || "";
+    const chatSelect = q(".tmc-chat-select"), newChat = q(".tmc-new-chat"), chatWarning = q(".tmc-chat-warning");
+    input.value = chat.draft || "";
+
+    function save() {
+      if (!chat.entries.length && !chat.draft && !readChat(chat.id)) { chatWarning.hidden = true; return; }
+      const saved = writeLocal(CHAT_PREFIX + chat.id, chat);
+      if (saved) chatStorage.delete(chat.id);
+      else chatStorage.set(chat.id, chat);
+      chatWarning.hidden = saved;
+    }
+    function renderChats() {
+      chatSelect.replaceChildren(...savedChats().map((saved) => {
+        const date = new Date(saved.updatedAt).toLocaleDateString();
+        return new Option(saved.title ? `${saved.title} · ${date}` : (saved.entries.length ? "Previous conversation" : "New chat"), saved.id);
+      }));
+      chatSelect.value = chat.id;
+    }
+    function openChat(next) {
+      if (busy || !next || next.id === chat.id) return;
+      chat.entries = readChat(chat.id)?.entries ?? chat.entries;
+      for (const entry of chat.entries) {
+        if (entry.v?.kind !== "confirm" || entry.v.status !== "open") continue;
+        entry.v.status = "cancelled";
+        api("actions/cancel", { token: entry.v.token }).catch(() => {});
+      }
+      save();
+      chat = next;
+      recoverPending();
+      expireConfirms(true);
+      histAt = -1;
+      input.value = chat.draft || "";
+      autosize();
+      save();
+      setFilter("analyst");
+      renderChats();
+      setMode("full", true);
+    }
 
     let layout = loadLogLayout();
     let drag;
@@ -379,13 +464,13 @@
       if (mode === "full") { tab.dataset.unread = "0"; scrollEnd(true); }
       if (mode !== "tab") tab.dataset.unread = "0";
       if (focus && mode !== "tab") setTimeout(() => input.focus(), 0);
-      save(); syncHeight();
+      saveSettings(); syncHeight();
     }
     function setFilter(f) {
       state.filter = f;
       root.dataset.filter = f;
       root.querySelectorAll(".tmc-chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.filter === f)));
-      save(); scrollEnd(true);
+      saveSettings(); renderAll();
     }
 
     const atBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < 40;
@@ -405,6 +490,7 @@
       const t = TYPES[e.type] ? e.type : "system";
       const div = document.createElement("div");
       div.className = `tmc-e t-${t} g-${TYPES[t][1]}` + (e.severity && e.severity !== "info" ? " sev-" + esc(e.severity) : "");
+      if (isAlert(e)) div.dataset.alert = "";
       let body;
       if (t === "user") body = `<span class="tmc-cmd">&gt; ${esc(e.text)}</span>`;
       else if (t === "pending") body = `<em class="tmc-work">Working… gathering quotes, history, filings and news<span class="tmc-dots"></span></em>`;
@@ -424,18 +510,23 @@
     }
     function renderAll() {
       log.replaceChildren();
-      if (!state.entries.length) {
-        log.innerHTML = `<p class="tmc-empty">Ask about any ticker, the paper accounts, the models or the economy. Paper-trader decisions and alerts show up here as they happen. Replies are advisory; the paper trader's risk engine stays final.</p>`;
+      if (!chat.entries.length && (state.filter === "analyst" || !alerts.length)) {
+        log.innerHTML = `<p class="tmc-empty">Ask the analyst a question to start this chat.</p>`;
       }
-      for (const e of state.entries) log.appendChild(renderEntry(e));
+      const visible = state.filter === "analyst" ? chat.entries : [...chat.entries, ...alerts].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+      for (const e of visible) log.appendChild(renderEntry(e));
       scrollEnd(true);
     }
     function add(entry) {
-      if (entry.id && state.entries.some((x) => x.id === entry.id)) return;
-      if (!state.entries.length) log.replaceChildren();
+      if (entry.id && chat.entries.some((x) => x.id === entry.id)) return;
       const stick = atBottom();
-      state.entries.push(entry);
-      if (state.entries.length > MAX_ENTRIES) { state.entries.shift(); if (log.firstChild) log.firstChild.remove(); }
+      log.querySelector(".tmc-empty")?.remove();
+      chat.entries.push(entry);
+      chat.updatedAt = entry.ts;
+      if (!chat.title && entry.type === "user") {
+        chat.title = entry.text.replace(/\s+/g, " ").slice(0, 56);
+        renderChats();
+      }
       log.appendChild(renderEntry(entry));
       save();
       if (stick) scrollEnd(true); else jump.hidden = false;
@@ -447,6 +538,7 @@
       const on = ta && ta.voiceOn ? ta.voiceOn() : false;
       voiceBtn.setAttribute("aria-pressed", String(on));
       voiceBtn.textContent = on ? "Voice on" : "Voice off";
+      narrationSelect.value = ta?.settings?.()?.analystNarration === "light" ? "light" : "verbose";
       unlockBtn.hidden = !(on && ta && ta.audioLocked && ta.audioLocked());
     }
 
@@ -473,8 +565,8 @@
 
     // Choice replies (e.g. "BTC: Bitcoin or the stock?"): only the newest choice is live; picking resends its value.
     function liveChoice() {
-      for (let i = state.entries.length - 1; i >= 0; i--) {
-        const e = state.entries[i];
+      for (let i = chat.entries.length - 1; i >= 0; i--) {
+        const e = chat.entries[i];
         if (e.type === "user" || e.type === "pending") return null;
         if (e.type === "analyst" && e.v && e.v.kind === "choice" && !e.picked) return e;
         if (e.type === "analyst") return null;
@@ -493,8 +585,8 @@
     // Allow / Cancel prompts for state-changing actions. Only the newest open one is live; it expires on its own.
     let confirmShownAt = 0;
     function liveConfirm() {
-      for (let i = state.entries.length - 1; i >= 0; i--) {
-        const e = state.entries[i];
+      for (let i = chat.entries.length - 1; i >= 0; i--) {
+        const e = chat.entries[i];
         if (e.type === "analyst" && e.v && e.v.kind === "confirm" && e.v.status === "open") {
           if (e.v.expiresAt && Date.parse(e.v.expiresAt) <= Date.now()) { e.v.status = "expired"; save(); renderAll(); return null; }
           return e;
@@ -503,12 +595,12 @@
       }
       return null;
     }
-    function expireConfirms() {
+    function expireConfirms(quiet = false) {
       let changed = false;
-      for (const e of state.entries) {
+      for (const e of chat.entries) {
         if (e.type === "analyst" && e.v && e.v.kind === "confirm" && e.v.status === "open" && e.v.expiresAt && Date.parse(e.v.expiresAt) <= Date.now()) { e.v.status = "expired"; changed = true; }
       }
-      if (changed) { save(); renderAll(); }
+      if (changed && !quiet) { save(); renderAll(); }
     }
     setInterval(expireConfirms, 5000);
     async function decide(entry, allow) {
@@ -522,10 +614,10 @@
         add({ type: "analyst", v: { kind: "cancelled", text: "Cancelled. Nothing was changed." }, ts: new Date().toISOString() });
         return;
       }
-      busy = true; root.dataset.busy = "1"; status.textContent = "working…";
+      setBusy(true);
       let result;
       try { result = compact(await api("actions/confirm", { token })); } catch (err) { result = { kind: "error", text: err.message || String(err) }; }
-      finally { busy = false; delete root.dataset.busy; status.textContent = ""; }
+      finally { setBusy(false); }
       if (result.kind === "error") { entry.v.status = /expired/i.test(result.text) ? "expired" : "failed"; save(); renderAll(); }
       add({ type: "analyst", v: result, ts: new Date().toISOString() });
       speak(result.kind === "action" ? `${result.label || "Done"}: done.` : result.text);
@@ -536,49 +628,55 @@
     }
 
     let busy = false, histAt = -1;
-    async function send(text) {
+    function setBusy(value) {
+      busy = value;
+      chatSelect.disabled = newChat.disabled = value;
+      if (value) root.dataset.busy = "1"; else delete root.dataset.busy;
+      status.textContent = value ? "working…" : "";
+    }
+    async function send(text, model) {
       text = String(text || "").trim().slice(0, MAX_INPUT);
       if (!text || busy) return;
-      if (text === "/clear") { input.value = ""; state.entries = []; state.draft = ""; save(); renderAll(); return; }
-      busy = true; histAt = -1; remember(text);
-      root.dataset.busy = "1"; status.textContent = "working…";
-      const id = "p:" + Date.now();
+      if (text === "/new" || text === "/clear") { chat.draft = ""; openChat(freshChat()); return; }
+      chat.entries = readChat(chat.id)?.entries ?? chat.entries;
+      const history = conversation();
+      setBusy(true); histAt = -1; remember(text);
+      const id = "p:" + crypto.randomUUID();
       add({ type: "user", text, ts: new Date().toISOString() });
       add({ type: "pending", id, text, ts: new Date().toISOString() });
-      state.draft = ""; input.value = ""; autosize(); save();
+      chat.draft = ""; input.value = ""; autosize(); save();
       if (state.mode === "tab") setMode("prompt");
       let entry;
       try {
-        let v = await api("command", { text });
+        let v = await api("command", { text, history, model });
         if (v.kind === "job" && v.job?.id) v = await pollJob(v.job.id);
         entry = { type: "analyst", v: compact(v), ts: new Date().toISOString() };
         if (entry.v.kind === "confirm") confirmShownAt = Date.now();
+        const voice = window.TradingVoiceSummary;
         const sum = entry.v.kind === "choice" ? entry.v.prompt
           : entry.v.kind === "confirm" ? `Allow ${entry.v.summary.title}? Press Enter to allow or Escape to cancel.`
-          : ["action", "clarify", "manual", "error"].includes(entry.v.kind) ? (entry.v.label ? entry.v.label + ". " : "") + String(entry.v.text || "").replace(/^- /gm, "").split("\n").slice(0, 3).join(". ")
-          : window.TradingVoiceSummary && window.TradingVoiceSummary.summarizeReply(v);
+          : voice?.narrateReply?.(entry.v, narrationSelect.value) ?? voice?.summarizeReply?.(entry.v);
         if (sum && window.TradingAlerts && window.TradingAlerts.say) {
-          window.TradingAlerts.say(sum, { category: "analyst", title: "AI analyst", pop: false, text: sum });
+          window.TradingAlerts.say(sum, { category: "analyst", title: "AI analyst", pop: false, narrate: true });
         }
       } catch (e) {
         entry = { type: "err", text: e.message || String(e), retry: text, ts: new Date().toISOString() };
       } finally {
-        busy = false; delete root.dataset.busy; status.textContent = "";
+        setBusy(false);
       }
-      state = { ...load(), mode: state.mode, filter: state.filter };  // another tab may have added entries
-      const at = state.entries.findIndex((m) => m.id === id);
-      if (at >= 0) state.entries.splice(at, 1, entry); else state.entries.push(entry);
+      chat.entries = readChat(chat.id)?.entries ?? chat.entries;
+      const at = chat.entries.findIndex((m) => m.id === id);
+      if (at >= 0) chat.entries.splice(at, 1, entry); else chat.entries.push(entry);
+      chat.updatedAt = entry.ts;
       save(); renderAll();
       if (state.mode !== "full") tab.dataset.unread = "1";
     }
 
     // A request interrupted by navigating away leaves a "pending" entry: offer to ask again.
-    let touched = false;
-    state.entries = state.entries.map((m) => {
-      if (m.type === "pending" && Date.now() - Date.parse(m.ts) > 3 * 60 * 1000) { touched = true; return { type: "err", text: "That answer was interrupted (the page changed).", retry: m.text, ts: m.ts }; }
-      return m;
-    });
-    if (touched) save();
+    function recoverPending() {
+      chat.entries = chat.entries.map((m) => m.type === "pending" && Date.now() - Date.parse(m.ts) > 3 * 60 * 1000
+        ? { type: "err", text: "That answer was interrupted (the page changed).", retry: m.text, ts: m.ts } : m);
+    }
 
     function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight + 2, 120) + "px"; }
     q(".tmc-send").addEventListener("click", () => send(input.value));
@@ -605,21 +703,28 @@
       } else if (e.key === "ArrowDown" && histAt >= 0 && start === end) {
         e.preventDefault();
         histAt += 1;
-        input.value = histAt >= history.length ? (histAt = -1, state.draft || "") : history[histAt];
+        input.value = histAt >= history.length ? (histAt = -1, chat.draft || "") : history[histAt];
         autosize();
       } else if (e.key === "Escape") {
         e.preventDefault(); setMode(state.mode === "full" ? "prompt" : "tab");
         if (state.mode === "tab") tab.focus();
       }
     });
-    input.addEventListener("input", () => { histAt = -1; state.draft = input.value; autosize(); save(); });
+    input.addEventListener("input", () => {
+      histAt = -1;
+      chat.entries = readChat(chat.id)?.entries ?? chat.entries;
+      chat.draft = input.value;
+      autosize(); save();
+    });
     root.querySelectorAll(".tmc-chip").forEach((b) => b.addEventListener("click", () => setFilter(b.dataset.filter)));
     q(".tmc-fold").addEventListener("click", () => setMode("prompt"));
     logBtn.addEventListener("click", () => setMode(state.mode === "full" ? "prompt" : "full"));
     q(".tmc-hide").addEventListener("click", () => { setMode("tab"); tab.focus(); });
     tab.addEventListener("click", () => setMode("full", true));
-    q(".tmc-clear").addEventListener("click", () => { state.entries = []; save(); renderAll(); input.focus(); });
+    newChat.addEventListener("click", () => openChat(freshChat()));
+    chatSelect.addEventListener("change", () => openChat(readChat(chatSelect.value)));
     q(".tmc-mute").addEventListener("click", () => window.TradingAlerts && window.TradingAlerts.toggleSettings && window.TradingAlerts.toggleSettings());
+    narrationSelect.addEventListener("change", () => window.TradingAlerts?.setAnalystNarration?.(narrationSelect.value));
     unlockBtn.addEventListener("click", () => setTimeout(syncVoice, 50)); // the click itself unlocks audio
     voiceBtn.addEventListener("click", () => {
       const ta = window.TradingAlerts;
@@ -642,9 +747,15 @@
         applyLayout(atBottom());
         return;
       }
-      if (e.key !== STORE || busy) return;
-      state = { ...load(), mode: state.mode, filter: state.filter };
-      renderAll();
+      if (!e.key?.startsWith(CHAT_PREFIX)) return;
+      if (!busy && e.key === CHAT_PREFIX + chat.id) {
+        const saved = readChat(chat.id);
+        if (saved) chat = document.activeElement === input ? { ...saved, draft: chat.draft } : saved;
+        input.value = chat.draft || "";
+        autosize();
+        renderAll();
+      }
+      renderChats();
     });
 
     // ---- decision feed ----
@@ -657,25 +768,47 @@
       const ta = window.TradingAlerts;
       if (!ta || !ta.onChange) return false;
       ta.onChange(syncVoice); syncVoice();
-      if (ta.onAlert) ta.onAlert((a, opts) => { if (wantAlert(a, opts)) add(fromAlert(a)); });
+      if (ta.onAlert) ta.onAlert((a, opts) => {
+        if (!wantAlert(a, opts) || alerts.some((entry) => entry.id === "a:" + a.id)) return;
+        const entry = fromAlert(a), full = alerts.length >= MAX_ENTRIES;
+        alerts = [...alerts, entry].slice(-MAX_ENTRIES);
+        writeLocal(FEED, alerts);
+        if (state.filter !== "analyst") {
+          const stick = atBottom();
+          log.querySelector(".tmc-empty")?.remove();
+          if (full) log.querySelector(".tmc-e[data-alert]")?.remove();
+          log.appendChild(renderEntry(entry));
+          scrollEnd(stick);
+        }
+      });
       return true;
     };
     if (!hook()) { let tries = 0; const t = setInterval(() => { if (hook() || ++tries > 40) clearInterval(t); }, 250); }
     fetch("/api/alerts/recent?limit=60", { cache: "no-store" }).then((r) => r.ok ? r.json() : { alerts: [] }).then((j) => {
-      const known = new Set(state.entries.map((e) => e.id).filter(Boolean));
+      const known = new Set(alerts.map((e) => e.id).filter(Boolean));
       const fresh = (j.alerts || []).filter((a) => a && a.id && !known.has("a:" + a.id) && !(a.category === "analyst" && String(a.id).startsWith("local-"))).map(fromAlert);
       if (!fresh.length) return;
-      if (!state.entries.length) log.replaceChildren();
-      state.entries = state.entries.concat(fresh).sort((x, y) => Date.parse(x.ts) - Date.parse(y.ts));
-      save(); renderAll();
+      alerts = alerts.concat(fresh).sort((x, y) => Date.parse(x.ts) - Date.parse(y.ts)).slice(-MAX_ENTRIES);
+      writeLocal(FEED, alerts);
+      if (state.filter !== "analyst") renderAll();
     }).catch(() => {});
 
     root.dataset.filter = state.filter;
     root.querySelectorAll(".tmc-chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.filter === state.filter)));
+    recoverPending();
+    expireConfirms(true);
+    save();
+    renderChats();
     renderAll();
     autosize();
     setMode(state.mode, false);
     applyLayout(true);
+    window.TradingAnalystChat = { submit(text, model) {
+      if (busy) return false;
+      setMode("full", true);
+      void send(text, model);
+      return true;
+    } };
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build);

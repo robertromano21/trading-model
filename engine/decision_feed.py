@@ -227,7 +227,7 @@ def ingest(paper_path=PAPER_DB, chat_path=CHAT_DB):
 
 
 def ingest_watch(path, chat_path=CHAT_DB):
-    """Provisional intraday signals from `daytrader.py run --dry-run --include-today` (nothing booked)."""
+    """Provisional stock signals and completed crypto paper fills."""
     doc = json.loads(Path(path).read_text(encoding="utf-8"))
     chat = connect_chat(chat_path)
     added = 0
@@ -235,13 +235,32 @@ def ingest_watch(path, chat_path=CHAT_DB):
         for t in doc.get("tradesThisRun") or []:
             key = f"watch:{t.get('session_date')}:{t.get('symbol')}:{t.get('entry_minute')}:{t.get('reason')}"
             m = t.get("entry_minute")
-            added += _insert(chat, key, kind="watch", account=doc.get("account"), ticker=t.get("symbol"), side="buy",
+            side = "sell" if t.get("direction") == -1 else "buy"
+            state = (f"open, marked at {_money(t.get('exit_price'))}" if t.get("reason") == "open" else
+                     f"{t.get('reason')} at {_money(t.get('exit_price'))}")
+            added += _insert(chat, key, kind="watch", account=doc.get("account"), ticker=t.get("symbol"), side=side,
                              qty=t.get("shares"), price=t.get("entry_price"), decision_date=t.get("session_date"),
                              text=(f"INTRADAY SIGNAL (provisional) {t.get('symbol')}: entry {_money(t.get('entry_price'))} at "
-                                   f"{int(m) // 60:02d}:{int(m) % 60:02d} ET, stop {_money(t.get('stop'))}, so far {t.get('reason')} "
-                                   f"{_money(t.get('exit_price'))} (P&L {_money(t.get('pnl'))})." if m is not None else
+                                   f"{int(m) // 60:02d}:{int(m) % 60:02d} ET, stop {_money(t.get('stop'))}, {state} "
+                                   f"(P&L {_money(t.get('pnl'))})." if m is not None else
                                    f"INTRADAY SIGNAL (provisional) {t.get('symbol')}"),
                              rationale=RATIONALE["orb_entry"] + " Provisional: the session is booked after the close.", data=t)
+        for t in doc.get("swingTargets") or []:
+            if t.get("signal") != "STOP WATCH":
+                continue
+            session = doc.get("session")
+            added += _insert(chat, f"swing-watch:{session}:{t['account']}:{t['ticker']}", kind="watch",
+                             account=t["account"], ticker=t["ticker"], side="sell", price=t["price"],
+                             decision_date=session,
+                             text=f"SWING STOP WATCH {t['ticker']}: an intraday bar reached the {_money(t['stop'])} stop.",
+                             rationale="The swing simulator checks this stop when it processes the daily bar.", data=t)
+        for t in doc.get("recentFills") or []:
+            added += _insert(chat, f"crypto-intraday:{t['account']}:{t['at']}", kind="fill",
+                             account=str(t["account"]), ticker=t["symbol"], side=t["side"].lower(),
+                             qty=t["qty"], price=t["price"], decision_date=t["at"][:10],
+                             text=f"CRYPTO PAPER {t['side']} {t['symbol']} at {_money(t['price'])}.",
+                             rationale="The signal used completed 15-minute candles and the simulation priced the fill at the following open.",
+                             data=t)
     chat.close()
     return {"added": added}
 

@@ -3,7 +3,7 @@
 (() => {
   if (document.querySelector(".suite-nav")) return;
   // Bump on UI changes: injected scripts/styles get ?v=<this> so browsers fetch the new copy.
-  const V = (window.__tmAssetVersion = "202611260947");
+  const V = (window.__tmAssetVersion = "202611261010");
   if (!window.__tmClientLog) {
     const logger = document.createElement("script");
     logger.src = "/client-log.js?v=" + V;
@@ -45,14 +45,13 @@
   document.head.appendChild(pickerCss);
 
   const pages = [
-    ["/", "Dashboard", "Market data, history, ADX, old papertrade, model, backtester, logs"],
+    ["/", "Dashboard", "Market data, history, ADX, strategy scanner and backtester"],
     ["/ticker.html", "Charts", "Per-ticker chart, indicators, AI verdict, fundamentals/news, Buy/Sell"],
     ["/paper2.html", "Paper trading", "Swing + day-trading paper accounts, risk state, live trading panel"],
     ["/ops.html", "Research & data", "Backtests, walk-forward, normality, run jobs, data health, Schwab"],
     ["/ai.html", "AI analyst", "Command prompt, flags, verdicts, model and API keys, paper-trader decision chat"],
     ["/ops.html#logs", "Logs", "Server, browser and engine logs with filters"],
   ];
-  const here = location.pathname === "/index.html" ? "/" : location.pathname;
   const nav = document.createElement("nav");
   nav.className = "suite-nav";
   nav.setAttribute("aria-label", "Trading Model");
@@ -60,14 +59,26 @@
   brand.className = "brand";
   brand.textContent = "Trading Model";
   nav.appendChild(brand);
-  for (const [href, label, title] of pages) {
+  const pageLinks = pages.map(([href, label, title]) => {
     const a = document.createElement("a");
     a.href = href;
     a.textContent = label;
     a.title = title;
-    if (href === here) a.className = "active";
     nav.appendChild(a);
+    return a;
+  });
+  function updateActivePage() {
+    const path = location.pathname === "/index.html" ? "/" : location.pathname;
+    const here = path === "/ops.html" && location.hash === "#logs" ? "/ops.html#logs" : path;
+    for (const link of pageLinks) {
+      const active = link.getAttribute("href") === here;
+      link.classList.toggle("active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    }
   }
+  updateActivePage();
+  window.addEventListener("hashchange", updateActivePage);
   const chip = document.createElement("span");
   chip.className = "chip";
   chip.textContent = "Schwab …";

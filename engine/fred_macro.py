@@ -95,6 +95,8 @@ SERIES = {
     "INDPRO": ("M", 20, "Industrial production", "growth"),
     "UMCSENT": ("M", 5, "UMich sentiment", "growth"),
     "GDPC1": ("Q", 35, "Real GDP (advance ~30d after quarter)", "growth"),
+    "IMPGSC1": ("Q", 45, "Real U.S. imports of goods and services", "growth"),
+    "EXPGSC1": ("Q", 45, "Real U.S. exports of goods and services", "growth"),
     # OUTSIDE FORECAST - display/comparison only, never a model input (see OUTSIDE_FORECASTS).
     "GDPNOW": ("Q", 30, "Atlanta Fed GDPNow (final nowcast per quarter)", "outside_forecast"),
     "WEI": ("W", 5, "NY Fed Weekly Economic Index", "growth"),
@@ -114,7 +116,8 @@ SERIES = {
 # m/m change is computed within one vintage (no base-year rebasing jumps, and payroll changes match the
 # headline as reported). Pseudo-ids look like "CPIAUCSL:pch".
 VINTAGE_TRANSFORMS = {"CPIAUCSL": "pch", "CPILFESL": "pch", "PCEPILFE": "pch", "PPIACO": "pch",
-                      "PAYEMS": "chg", "GDPC1": "pca", "INDPRO": "pch"}
+                      "PAYEMS": "chg", "GDPC1": "pca", "IMPGSC1": "pca", "EXPGSC1": "pca", "INDPRO": "pch"}
+TRADE_GROWTH_VINTAGES = frozenset({"IMPGSC1", "EXPGSC1"})
 
 # Outside projections (Street consensus, Fed nowcasts, surveys of forecasters). These are stored for
 # display and accuracy comparison only. macro_nowcast refuses to use any of them as a feature.
@@ -324,7 +327,46 @@ def update_series(series_id, full=False, root=None, opener=None, prefer_api=None
     return merged, source
 
 
+def _trade_growth_vintages(series_id, root=None, opener=None):
+    """Use both quarterly levels from the same first-release vintage."""
+    releases = load_vintage(series_id, root)
+    existing = load_vintage(series_id, root, "pca")
+    if releases is None:
+        raise FredError(f"Initial releases are missing for {series_id}.")
+    recent = releases["available"] <= period_end(releases.index, "Q") + pd.Timedelta(days=120)
+    todo = releases.loc[recent, "available"]
+    if existing is not None:
+        todo = todo[todo != existing["available"].reindex(todo.index)]
+    records = []
+    for start in range(0, len(todo), 30):
+        block = todo.iloc[start:start + 30]
+        prior = block.index - pd.DateOffset(months=3)
+        params = {"series_id": series_id, "file_type": "json", "api_key": _api_key(), "output_type": 2,
+                  "observation_start": str(prior[0].date()), "observation_end": str(block.index[-1].date()),
+                  "vintage_dates": ",".join(block.dt.strftime("%Y-%m-%d").unique())}
+        doc = json.loads(_get(FRED_API + "?" + urlencode(params), opener=opener, accept="application/json",
+                              safe_name=series_id))
+        rows = {row["date"]: row for row in doc.get("observations", [])}
+        for day, previous, released in zip(block.index, prior, block):
+            key = f"{series_id}_{released:%Y%m%d}"
+            try:
+                current = float(rows[str(day.date())][key])
+                previous_value = float(rows[str(previous.date())][key])
+            except (KeyError, ValueError):
+                continue
+            if current > 0 and previous_value > 0:
+                records.append((day, 100 * ((current / previous_value) ** 4 - 1), released))
+    fresh = pd.DataFrame(records, columns=["date", "value", "available"]).set_index("date")
+    frame = pd.concat([existing, fresh]) if existing is not None and not fresh.empty else (
+        existing if existing is not None else fresh)
+    return frame[~frame.index.duplicated(keep="last")].sort_index()
+
+
 def update_vintage(series_id, root=None, opener=None, units=None):
+    if units == "pca" and series_id in TRADE_GROWTH_VINTAGES:
+        frame = _trade_growth_vintages(series_id, root, opener)
+        _write_frame(vintage_path(series_id, root, units), frame)
+        return frame
     rows = fetch_api(series_id, opener=opener, output_type=4, units=units)
     frame = parse_api_rows(rows, series_id, vintage=True)
     _write_frame(vintage_path(series_id, root, units), frame)
