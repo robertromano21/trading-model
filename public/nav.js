@@ -3,7 +3,7 @@
 (() => {
   if (document.querySelector(".suite-nav")) return;
   // Bump on UI changes: injected scripts/styles get ?v=<this> so browsers fetch the new copy.
-  const V = (window.__tmAssetVersion = "202611260930");
+  const V = (window.__tmAssetVersion = "202611260947");
   if (!window.__tmClientLog) {
     const logger = document.createElement("script");
     logger.src = "/client-log.js?v=" + V;

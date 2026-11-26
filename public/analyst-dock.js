@@ -29,7 +29,7 @@
   const OLD_STORE = "tm.analystDock.v1";
   const HIST = "tm.console.history";
   const LOG_LAYOUT = "tm.console.logLayout";
-  const LOG_ZOOMS = [100, 125, 150];
+  const LOG_ZOOMS = [100, 125, 150, 200, 300];
   const LOG_MARGIN = 8;
   const LOG_MIN_WIDTH = 240;
   const LOG_MIN_HEIGHT = 126;
@@ -61,7 +61,6 @@
     const st = {
       mode: ["full", "prompt", "tab"].includes(v.mode) ? v.mode : "full",
       filter: GROUPS.some((g) => g[0] === v.filter) ? v.filter : "all",
-      font: v.font === "plain" ? "plain" : "pixel",
       entries: Array.isArray(v.entries) ? v.entries : [],
       draft: typeof v.draft === "string" ? v.draft : "",
     };
@@ -132,14 +131,42 @@
     return keep;
   }
 
+  function renderTable(columns, rows, format = esc) {
+    const headers = columns.map((cell) => `<th scope="col">${format(cell)}</th>`).join("");
+    const body = rows.map((row) => `<tr>${columns.map((_, index) => `<td>${format(row[index] ?? "")}</td>`).join("")}</tr>`).join("");
+    return `<div class="tmc-tablewrap" tabindex="0" role="region" aria-label="Analyst results table"><table class="tmc-table">` +
+      `<thead><tr>${headers}</tr></thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  const tablePipe = /(?<!\\)\|/;
+  const tableCells = (line) => line.trim().replace(/^\||(?<!\\)\|$/g, "").split(tablePipe)
+    .map((cell) => cell.trim().replace(/\\\|/g, "|"));
+
   function markdown(text) { // small, safe subset: escape first, then format
     const lines = esc(text).split(/\r?\n/), out = [];
     let list = false;
     const inline = (s) => s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
-    for (const line of lines) {
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
       const h = line.match(/^(#{1,4})\s+(.*)$/), li = line.match(/^\s*[-*]\s+(.*)$/);
       if (li) { if (!list) { out.push("<ul>"); list = true; } out.push("<li>" + inline(li[1]) + "</li>"); continue; }
       if (list) { out.push("</ul>"); list = false; }
+      const divider = lines[index + 1] ?? "";
+      if (tablePipe.test(line) && tablePipe.test(divider)) {
+        const columns = tableCells(line), separators = tableCells(divider);
+        if (columns.length === separators.length && separators.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+          const rows = [];
+          index++;
+          while (tablePipe.test(lines[index + 1] ?? "")) {
+            const row = tableCells(lines[index + 1]);
+            if (row.length !== columns.length) break;
+            rows.push(row);
+            index++;
+          }
+          out.push(renderTable(columns, rows, inline));
+          continue;
+        }
+      }
       if (h) out.push("<p><strong>" + inline(h[2]) + "</strong></p>");
       else if (line.trim()) out.push("<p>" + inline(line) + "</p>");
     }
@@ -165,8 +192,7 @@
           `<span class="tmc-hint">Enter = Allow · Esc = Cancel${exp ? ` · expires ${esc(exp)}` : ""}</span></div>` : `<div class="tmc-cf-done">${esc(done)}</div>`) + `</div>`;
     }
     if (v.kind === "action" || v.kind === "clarify" || v.kind === "manual" || v.kind === "cancelled" || v.kind === "error") {
-      const table = v.table && v.table.columns.length ? `<div class="tmc-tablewrap"><table class="tmc-table"><thead><tr>${v.table.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
-        v.table.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("") + `</tbody></table></div>` : "";
+      const table = v.table?.columns?.length ? renderTable(v.table.columns, v.table.rows ?? []) : "";
       const head = v.kind === "action" && v.label ? `<div class="tmc-meta"><span class="tmc-b">${esc(v.label)}</span></div>` : "";
       return head + `<div class="tmc-act k-${esc(v.kind)}">${markdown(v.text || "")}</div>` + table;
     }
@@ -228,7 +254,6 @@
           <span class="tmc-tools">
             <button type="button" class="tmc-voice" aria-pressed="true" title="Speak analyst replies and trade alerts">Voice</button>
             <button type="button" class="tmc-mute" title="Voice settings and mute by category">Mute…</button>
-            <button type="button" class="tmc-font" title="Switch the log between pixel and plain text">Aa</button>
             <button type="button" class="tmc-clear" title="Clear the log">Clear</button>
             <button type="button" class="tmc-fold" title="Hide the log (Esc)" aria-label="Hide the log">▾</button>
           </span>
@@ -362,7 +387,6 @@
       root.querySelectorAll(".tmc-chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.filter === f)));
       save(); scrollEnd(true);
     }
-    function setFont(f) { state.font = f; root.dataset.font = f; save(); }
 
     const atBottom = () => log.scrollHeight - log.scrollTop - log.clientHeight < 40;
     function scrollEnd(force) {
@@ -541,7 +565,7 @@
       } finally {
         busy = false; delete root.dataset.busy; status.textContent = "";
       }
-      state = { ...load(), mode: state.mode, filter: state.filter, font: state.font };  // another tab may have added entries
+      state = { ...load(), mode: state.mode, filter: state.filter };  // another tab may have added entries
       const at = state.entries.findIndex((m) => m.id === id);
       if (at >= 0) state.entries.splice(at, 1, entry); else state.entries.push(entry);
       save(); renderAll();
@@ -595,7 +619,6 @@
     q(".tmc-hide").addEventListener("click", () => { setMode("tab"); tab.focus(); });
     tab.addEventListener("click", () => setMode("full", true));
     q(".tmc-clear").addEventListener("click", () => { state.entries = []; save(); renderAll(); input.focus(); });
-    q(".tmc-font").addEventListener("click", () => setFont(state.font === "pixel" ? "plain" : "pixel"));
     q(".tmc-mute").addEventListener("click", () => window.TradingAlerts && window.TradingAlerts.toggleSettings && window.TradingAlerts.toggleSettings());
     unlockBtn.addEventListener("click", () => setTimeout(syncVoice, 50)); // the click itself unlocks audio
     voiceBtn.addEventListener("click", () => {
@@ -620,7 +643,7 @@
         return;
       }
       if (e.key !== STORE || busy) return;
-      state = { ...load(), mode: state.mode, filter: state.filter, font: state.font };
+      state = { ...load(), mode: state.mode, filter: state.filter };
       renderAll();
     });
 
@@ -647,7 +670,7 @@
       save(); renderAll();
     }).catch(() => {});
 
-    root.dataset.filter = state.filter; root.dataset.font = state.font;
+    root.dataset.filter = state.filter;
     root.querySelectorAll(".tmc-chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.filter === state.filter)));
     renderAll();
     autosize();
